@@ -1,10 +1,13 @@
-import { default as makeWASocket, DisconnectReason, useMultiFileAuthState, downloadMediaMessage } from '@whiskeysockets/baileys';
+import { default as makeWASocket, DisconnectReason, useMultiFileAuthState, downloadMediaMessage, fetchLatestBaileysVersion, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const SETTINGS_FILE = 'settings.json';
 const IMAGE_FILE = 'welcome.jpg';
+
+// In-memory message store to decrypt retried messages
+const msgRetryCounterCache = new Map();
 
 // Multi-Language Localization Dictionaries
 const LANGUAGES = {
@@ -126,13 +129,13 @@ const LANGUAGES = {
 
 const defaultSettings = {
     botEnabled: true,
-    language: "en", // default language
+    language: "en",
     awaitingLangChoice: false,
     businessName: "Apex Store & Solutions",
     hotline: "+94 7X XXX XXXX",
     email: "support@apexstore.com",
     bankDetails: "🏦 Bank: Commercial Bank\n👤 Account Name: Apex Store\n🔢 Account Number: 800123456789\n📍 Branch: Colombo Main",
-    deliveryInfo: "• Local / Metro: 24 - 48 Hours\n• Islandwide / Nationwide: 2 - 3 Days\n• Cash on Delivery (COD) Available!",
+    deliveryInfo: "• Local / Metro: 24 - 48 Hours\n• Islandwide: 2 - 3 Days\n• Cash on Delivery (COD) Available!",
     products: [
         "Premium Item A - LKR 3,500 (High quality edition)",
         "Pro Pack B - LKR 5,200 (Full accessories included)",
@@ -183,8 +186,8 @@ function buildProductsList(settings) {
 const LANG_CHOICE_MSG = 
 `🌐 *CHOOSE BOT LANGUAGE / භාෂාව තෝරන්න:*
 
-Please select the language you want your Bot to use:
-කරුණාකර ඔබට අවශ්‍ය භාෂාවේ අංකය Reply කරන්න:
+Please select the language:
+කරුණාකර භාෂාවේ අංකය Reply කරන්න:
 
 1️⃣ 🇱🇰 *Sinhala* (සිංහල)
 2️⃣ 🇬🇧 *English*
@@ -193,15 +196,33 @@ Please select the language you want your Bot to use:
 5️⃣ 🇪🇸 *Spanish* (Español)
 6️⃣ 🇫🇷 *French* (Français)
 
-👉 _Reply with the number (e.g. 1 or 2)_`;
+👉 _Reply with number (e.g. 1 or 2)_`;
+
+// Keep message store to resolve decryption
+const messageStore = {};
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_session');
+    const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
+        version,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
-        auth: state
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+        },
+        generateHighQualityLinkPreview: true,
+        syncFullHistory: false,
+        msgRetryCounterCache,
+        // Crucial for resolving "Waiting for this message"
+        getMessage: async (key) => {
+            if (messageStore[key.id]) {
+                return messageStore[key.id].message;
+            }
+            return undefined;
+        }
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -210,31 +231,7 @@ async function connectToWhatsApp() {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
-            console.log('\n👑 Super Multilingual WhatsApp Business Bot is ONLINE!\n');
-
-            try {
-                const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                const settings = getSettings();
-                settings.awaitingLangChoice = true;
-                saveSettings(settings);
-
-                const notifyMsg = 
-`🎉 *WHATSAPP BOT CONNECTED SUCCESSFULLY!* 🎉
-
-🟢 *Status:* Online & Active 24/7 on VPS
-🛡️ *Anti-Ban Shield:* Enabled
-🏪 *Business:* ${settings.businessName}
-
-════════════════════════════
-${LANG_CHOICE_MSG}
-════════════════════════════
-
-💡 _You can also change language anytime using *.lang*_`;
-
-                await sock.sendMessage(myJid, { text: notifyMsg });
-            } catch (err) {
-                console.error('Failed to send admin startup alert:', err);
-            }
+            console.log('\n👑 Super WhatsApp Bot is ONLINE and Decryption Cache Ready!\n');
         }
     });
 
@@ -242,23 +239,23 @@ ${LANG_CHOICE_MSG}
 
     async function safeReply(from, text, quotedMsg) {
         await sock.sendPresenceUpdate('composing', from);
-        await sleep(1200);
+        await sleep(1000);
         await sock.sendPresenceUpdate('paused', from);
-        await sock.sendMessage(from, { text }, { quoted: quotedMsg });
+        return await sock.sendMessage(from, { text }, { quoted: quotedMsg });
     }
 
     async function sendWelcome(from, text, quotedMsg) {
         await sock.sendPresenceUpdate('composing', from);
-        await sleep(1500);
+        await sleep(1200);
         await sock.sendPresenceUpdate('paused', from);
 
         if (fs.existsSync(IMAGE_FILE)) {
-            await sock.sendMessage(from, {
+            return await sock.sendMessage(from, {
                 image: fs.readFileSync(IMAGE_FILE),
                 caption: text
             }, { quoted: quotedMsg });
         } else {
-            await sock.sendMessage(from, { text }, { quoted: quotedMsg });
+            return await sock.sendMessage(from, { text }, { quoted: quotedMsg });
         }
     }
 
@@ -267,6 +264,11 @@ ${LANG_CHOICE_MSG}
 
         for (const msg of messages) {
             if (!msg.message) continue;
+
+            // Cache message for retry decryption
+            if (msg.key && msg.key.id) {
+                messageStore[msg.key.id] = msg;
+            }
 
             const from = msg.key.remoteJid;
             const isFromMe = msg.key.fromMe;
@@ -298,12 +300,11 @@ ${LANG_CHOICE_MSG}
                     saveSettings(settings);
                     const selected = LANGUAGES[settings.language];
                     await sock.sendMessage(from, { 
-                        text: `${selected.adminLangSet}\n\n👉 Type *.help* to view your Admin Dashboard in ${selected.name}!` 
+                        text: `${selected.adminLangSet}\n\n👉 Type *.help* to view your Admin Dashboard!` 
                     });
                     continue;
                 }
 
-                // Manual .lang command
                 if (textLower === '.lang' || textLower === '.language') {
                     settings.awaitingLangChoice = true;
                     saveSettings(settings);
@@ -311,7 +312,6 @@ ${LANG_CHOICE_MSG}
                     continue;
                 }
 
-                // Set Image
                 if (isImage && (textLower === '.setimage' || textLower === '.image')) {
                     try {
                         await sock.sendMessage(from, { text: '⏳ Downloading and saving Welcome Image...' });
@@ -329,7 +329,6 @@ ${LANG_CHOICE_MSG}
                     continue;
                 }
 
-                // Admin Help / Dashboard
                 if (textLower === '.help' || textLower === '.admin') {
                     const adminHelp = 
 `${l.adminTitle}
