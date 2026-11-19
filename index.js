@@ -1,4 +1,4 @@
-import { default as makeWASocket, DisconnectReason, useMultiFileAuthState, downloadMediaMessage, fetchLatestBaileysVersion, jidNormalizedUser } from '@whiskeysockets/baileys';
+import { default as makeWASocket, DisconnectReason, useMultiFileAuthState, downloadMediaMessage, fetchLatestBaileysVersion, generateWAMessageFromContent, proto } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
 import readline from 'readline';
@@ -89,11 +89,33 @@ async function connectToWhatsApp() {
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
             if (pairingInterval) clearInterval(pairingInterval);
-            console.log('\n🎉 WhatsApp Bot is ONLINE and Ready!\n');
+            console.log('\n🎉 WhatsApp Bot is ONLINE and Ready in Message Yourself!\n');
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    // 🔥 THE FIX: Relay message directly to bypass "Waiting for this message" in Message Yourself
+    async function replyToSelf(jid, text) {
+        try {
+            const msg = generateWAMessageFromContent(
+                jid,
+                proto.Message.fromObject({
+                    extendedTextMessage: {
+                        text: text
+                    }
+                }),
+                { userJid: sock.user.id }
+            );
+
+            await sock.relayMessage(jid, msg.message, {
+                messageId: msg.key.id
+            });
+        } catch (err) {
+            // Fallback to standard send if relay fails
+            await sock.sendMessage(jid, { text });
+        }
+    }
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
@@ -119,7 +141,7 @@ async function connectToWhatsApp() {
             let settings = getSettings();
 
             // ==========================================
-            // 🛡️ ADMIN COMMANDS (Direct & Simple)
+            // 🛡️ MESSAGE YOURSELF (ADMIN CONTROL)
             // ==========================================
             if (isFromMe) {
                 // Help Menu
@@ -147,7 +169,7 @@ async function connectToWhatsApp() {
 ⚡ *Controls:*
 • *.bot on* / *.bot off* - Turn Bot ON/OFF
 • *.stats* - Server RAM & Uptime`;
-                    await sock.sendMessage(from, { text: helpText });
+                    await replyToSelf(from, helpText);
                     continue;
                 }
 
@@ -166,7 +188,7 @@ async function connectToWhatsApp() {
 • 🖼️ *Poster:* ${fs.existsSync(IMAGE_FILE) ? 'Saved ✅' : 'None ⚠️'}
 • 💾 *Memory:* ${mem} MB
 • ⏱️ *Uptime:* ${hours}h ${mins}m`;
-                    await sock.sendMessage(from, { text: statsText });
+                    await replyToSelf(from, statsText);
                     continue;
                 }
 
@@ -180,9 +202,9 @@ async function connectToWhatsApp() {
                             { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
                         );
                         fs.writeFileSync(IMAGE_FILE, buffer);
-                        await sock.sendMessage(from, { text: '🎉 *Success!* Welcome Image has been saved!' });
+                        await replyToSelf(from, '🎉 *Success!* Welcome Image has been saved!');
                     } catch (err) {
-                        await sock.sendMessage(from, { text: '❌ Failed to save image.' });
+                        await replyToSelf(from, '❌ Failed to save image.');
                     }
                     continue;
                 }
@@ -191,13 +213,13 @@ async function connectToWhatsApp() {
                 if (textLower === '.bot on') {
                     settings.botEnabled = true;
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: '✅ Bot Auto-Reply is now ON!' });
+                    await replyToSelf(from, '✅ Bot Auto-Reply is now ON!');
                     continue;
                 }
                 if (textLower === '.bot off') {
                     settings.botEnabled = false;
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: '🛑 Bot Auto-Reply is now OFF!' });
+                    await replyToSelf(from, '🛑 Bot Auto-Reply is now OFF!');
                     continue;
                 }
 
@@ -205,7 +227,7 @@ async function connectToWhatsApp() {
                 if (textLower.startsWith('.setname ')) {
                     settings.businessName = text.slice(9).trim();
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: `✅ Name updated to: *${settings.businessName}*` });
+                    await replyToSelf(from, `✅ Name updated to: *${settings.businessName}*`);
                     continue;
                 }
 
@@ -213,7 +235,7 @@ async function connectToWhatsApp() {
                 if (textLower.startsWith('.setphone ')) {
                     settings.hotline = text.slice(10).trim();
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: `✅ Hotline updated to: *${settings.hotline}*` });
+                    await replyToSelf(from, `✅ Hotline updated to: *${settings.hotline}*`);
                     continue;
                 }
 
@@ -221,7 +243,7 @@ async function connectToWhatsApp() {
                 if (textLower.startsWith('.setemail ')) {
                     settings.email = text.slice(10).trim();
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: `✅ Email updated to: *${settings.email}*` });
+                    await replyToSelf(from, `✅ Email updated to: *${settings.email}*`);
                     continue;
                 }
 
@@ -231,7 +253,7 @@ async function connectToWhatsApp() {
                     if (!settings.products) settings.products = [];
                     settings.products.push(item);
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: `✅ *Product Added!*\n${item}\nTotal: ${settings.products.length}` });
+                    await replyToSelf(from, `✅ *Product Added!*\n${item}\nTotal: ${settings.products.length}`);
                     continue;
                 }
 
@@ -241,9 +263,9 @@ async function connectToWhatsApp() {
                     if (!isNaN(idx) && settings.products && idx >= 0 && idx < settings.products.length) {
                         const removed = settings.products.splice(idx, 1);
                         saveSettings(settings);
-                        await sock.sendMessage(from, { text: `🗑️ Deleted: "${removed[0]}"` });
+                        await replyToSelf(from, `🗑️ Deleted: "${removed[0]}"`);
                     } else {
-                        await sock.sendMessage(from, { text: '❌ Invalid number. Use *.listproducts*' });
+                        await replyToSelf(from, '❌ Invalid number. Use *.listproducts*');
                     }
                     continue;
                 }
@@ -251,7 +273,7 @@ async function connectToWhatsApp() {
                 // List Products
                 if (textLower === '.listproducts') {
                     const list = (settings.products || []).map((p, i) => `${i + 1}. ${p}`).join('\n');
-                    await sock.sendMessage(from, { text: `🛍️ *PRODUCTS LIST:*\n\n${list || 'No products added yet!'}` });
+                    await replyToSelf(from, `🛍️ *PRODUCTS LIST:*\n\n${list || 'No products added yet!'}`);
                     continue;
                 }
 
@@ -259,7 +281,7 @@ async function connectToWhatsApp() {
                 if (textLower.startsWith('.setbank ')) {
                     settings.bankDetails = text.slice(9).trim();
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: '✅ Bank Details updated!' });
+                    await replyToSelf(from, '✅ Bank Details updated!');
                     continue;
                 }
 
@@ -267,7 +289,7 @@ async function connectToWhatsApp() {
                 if (textLower.startsWith('.setdelivery ')) {
                     settings.deliveryInfo = text.slice(13).trim();
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: '✅ Delivery Info updated!' });
+                    await replyToSelf(from, '✅ Delivery Info updated!');
                     continue;
                 }
             }
