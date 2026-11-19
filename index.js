@@ -6,136 +6,295 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const SETTINGS_FILE = 'settings.json';
 const IMAGE_FILE = 'welcome.jpg';
 
-// In-memory message store to decrypt retried messages
-const msgRetryCounterCache = new Map();
-
-// Multi-Language Localization Dictionaries
-const LANGUAGES = {
+// Dedicated ADMIN Multilingual Translations
+const ADMIN_LANGUAGES = {
     en: {
-        name: "English",
-        flag: "🇬🇧",
-        welcomeTitle: "Welcome to",
-        welcomeSub: "How can we assist you today?\nPlease reply with the number or keyword of your choice:",
-        menu1: "🛍️ Products (or reply 1)",
-        menu2: "💳 Bank Details (or reply 2)",
-        menu3: "🚚 Delivery Info (or reply 3)",
-        menu4: "📍 Contact Us (or reply 4)",
-        menu5: "💬 Agent Support (or reply 5)",
-        orderPrompt: "📦 How to Order:\nPlease reply with Item Name, Full Name, Delivery Address & Contact Number.",
-        returnMenu: "🔙 Reply menu to return.",
-        bankReceiptPrompt: "⚠️ Important: Once paid, please send a photo/screenshot of your receipt.",
-        agentNotified: "💬 An agent has been notified! Our team will get back to you shortly during working hours.",
-        urgentCall: "For urgent inquiries, call:",
-        adminTitle: "👑 SUPER BOT ADMIN DASHBOARD 👑",
-        adminConnected: "🎉 WHATSAPP BOT CONNECTED SUCCESSFULLY! 🎉",
-        adminLangSet: "✅ Language successfully set to: English 🇬🇧"
+        name: "English 🇬🇧",
+        connectedAlert: "🎉 *WHATSAPP BOT CONNECTED SUCCESSFULLY!* 🎉\n\n🟢 *Status:* Online & Active 24/7 on VPS\n🛡️ *Security:* Anti-Ban Shield Active",
+        selectLangPrompt: "🌐 *ADMIN LANGUAGE SELECTION:*\nPlease choose your preferred language for the Admin Control Panel:\n\n1️⃣ 🇱🇰 Sinhala\n2️⃣ 🇬🇧 English\n3️⃣ 🇮🇳 Tamil\n4️⃣ 🇰🇷 Korean\n5️⃣ 🇪🇸 Spanish\n6️⃣ 🇫🇷 French\n\n👉 _Reply with the number (e.g. 1 or 2)_",
+        langUpdated: "✅ *Admin Language set to English!* 🇬🇧\n\nType *.help* to view your Admin Control Dashboard.",
+        helpTitle: "👑 *SUPER BOT ADMIN CONTROL PANEL* 👑",
+        helpLang: "🌐 *Admin Language:* English 🇬🇧",
+        helpCommands: 
+`⚙️ *Language Settings:*
+• *.lang* - Switch Admin Language
+
+🖼️ *Welcome Image Poster:*
+• Send any photo with caption *.setimage*
+
+🏪 *Store Settings:*
+• *.setname <Name>* - Change Store Name
+• *.setphone <Number>* - Change Hotline Number
+• *.setemail <Email>* - Change Support Email
+
+🛍️ *Products Management:*
+• *.addproduct <Item - Price - Info>* - Add new item
+• *.delproduct <Number>* - Delete product (e.g. .delproduct 1)
+• *.listproducts* - View all active products
+
+💳 *Payment & Delivery:*
+• *.setbank <Details>* - Update Bank details
+• *.setdelivery <Info>* - Update Shipping info
+
+⚡ *System Controls:*
+• *.bot on* / *.bot off* - Turn Bot Auto-Replies ON/OFF
+• *.stats* - Server RAM & Bot Health
+• *.preview* - Preview customer menu`,
+        botOn: "✅ *Bot Auto-Reply is now ACTIVE (ON)!*",
+        botOff: "🛑 *Bot Auto-Reply is now MUTED (OFF)!*",
+        nameUpdated: "✅ Store Name updated to:",
+        phoneUpdated: "✅ Hotline updated to:",
+        emailUpdated: "✅ Email updated to:",
+        bankUpdated: "✅ Bank Details updated successfully!",
+        deliveryUpdated: "✅ Delivery Info updated successfully!",
+        productAdded: "✅ *Product Added Successfully!*",
+        productDeleted: "🗑️ *Product Deleted Successfully!*",
+        noProducts: "📦 No products added yet! Use *.addproduct* to add.",
+        imgSaving: "⏳ Saving image to VPS storage...",
+        imgSaved: "🎉 *Welcome Image saved successfully!*",
+        imgFailed: "❌ Failed to save image. Please try again."
     },
     si: {
-        name: "Sinhala",
-        flag: "🇱🇰",
-        welcomeTitle: "සාදරයෙන් පිළිගනිමු",
-        welcomeSub: "ඔබට අවශ්‍ය සේවාව සඳහා අදාළ අංකය හෝ වචනය reply කරන්න:",
-        menu1: "🛍️ භාණ්ඩ හා සේවා (හෝ 1)",
-        menu2: "💳 බැංකු විස්තර (හෝ 2)",
-        menu3: "🚚 ඩිලිවරි විස්තර (හෝ 3)",
-        menu4: "📍 අපව අමතන්න (හෝ 4)",
-        menu5: "💬 සහායකයෙකු සම්බන්ධ කරගැනීම (හෝ 5)",
-        orderPrompt: "📦 ඇණවුම් කිරීමට:\nඅවශ්‍ය භාණ්ඩයේ නම, ඔබගේ නම, ලිපිනය සහ දුරකථන අංකය එවන්න.",
-        returnMenu: "🔙 මුල් පිටුවට යාමට menu ලෙස එවන්න.",
-        bankReceiptPrompt: "⚠️ වැදගත්: මුදල් තැන්පත් කළ පසු රිසිට්පතේ ඡායාරූපයක් එවන්න.",
-        agentNotified: "💬 අපගේ නියෝජිතයෙකුට දැනුම් දෙන ලදී! සේවා කාලය තුළ හැකි ඉක්මනින් සම්බන්ධ වනු ඇත.",
-        urgentCall: "හදිසි විමසීම් සඳහා අමතන්න:",
-        adminTitle: "👑 සුපිරි බොට් ඇඩ්මින් පාලක පුවරුව 👑",
-        adminConnected: "🎉 වට්ස්ඇප් බොට් සාර්ථකව සම්බන්ධ විය! 🎉",
-        adminLangSet: "✅ භාෂාව සාර්ථකව සිංහල ලෙස සකසන ලදී! 🇱🇰"
+        name: "Sinhala 🇱🇰",
+        connectedAlert: "🎉 *වට්ස්ඇප් බොට් සාර්ථකව සම්බන්ධ විය!* 🎉\n\n🟢 *තත්වය:* VPS මත 24/7 ක්‍රියාත්මකයි\n🛡️ *ආරක්ෂාව:* Anti-Ban පද්ධතිය සක්‍රීයයි",
+        selectLangPrompt: "🌐 *ඇඩ්මින් භාෂාව තෝරාගැනීම:*\nකරුණාකර ඔබගේ Admin පාලක පුවරුව සඳහා කැමති භාෂාවේ අංකය තෝරන්න:\n\n1️⃣ 🇱🇰 Sinhala (සිංහල)\n2️⃣ 🇬🇧 English\n3️⃣ 🇮🇳 Tamil (தமிழ்)\n4️⃣ 🇰🇷 Korean (한국어)\n5️⃣ 🇪🇸 Spanish (Español)\n6️⃣ 🇫🇷 French (Français)\n\n👉 _අදාළ අංකය reply කරන්න (උදා: 1 හෝ 2)_",
+        langUpdated: "✅ *ඇඩ්මින් භාෂාව සිංහල ලෙස සකසන ලදී!* 🇱🇰\n\nපාලක පුවරුව බැලීමට *.help* ලෙස එවන්න.",
+        helpTitle: "👑 *සුපිරි බොට් ඇඩ්මින් පාලක පුවරුව* 👑",
+        helpLang: "🌐 *ඇඩ්මින් භාෂාව:* සිංහල 🇱🇰",
+        helpCommands: 
+`⚙️ *භාෂා සැකසුම්:*
+• *.lang* - ඇඩ්මින් භාෂාව මාරු කිරීමට
+
+🖼️ *Welcome ඡායාරූපය:*
+• ඕනෑම photo එකක් *.setimage* යනුවෙන් caption එක දමා එවන්න
+
+🏪 *ව්‍යාපාරික තොරතුරු:*
+• *.setname <නම>* - ව්‍යාපාර නාමය වෙනස් කිරීමට
+• *.setphone <අංකය>* - Hotline අංකය වෙනස් කිරීමට
+• *.setemail <Email>* - විද්‍යුත් ලිපිනය වෙනස් කිරීමට
+
+🛍️ *භාණ්ඩ කළමනාකරණය:*
+• *.addproduct <භාණ්ඩය - මිල - විස්තර>* - අලුත් භාණ්ඩයක් ඇතුළත් කිරීමට
+• *.delproduct <අංකය>* - භාණ්ඩයක් ඉවත් කිරීමට (උදා: .delproduct 1)
+• *.listproducts* - දැනට ඇති සියලුම භාණ්ඩ බැලීමට
+
+💳 *ගෙවීම් සහ ඩිලිවරි:*
+• *.setbank <විස්තර>* - බැංකු ගිණුම් විස්තර යාවත්කාලීන කිරීමට
+• *.setdelivery <විස්තර>* - ඩිලිවරි ගාස්තු සහ දින වෙනස් කිරීමට
+
+⚡ *පද්ධති පාලනය:*
+• *.bot on* / *.bot off* - බොට් On හෝ Off කිරීමට
+• *.stats* - Server මතකය (RAM) සහ ක්‍රියාකාරී කාලය බැලීමට
+• *.preview* - පාරිභෝගිකයාට පෙනෙන ආකාරය බලාගැනීමට`,
+        botOn: "✅ *බොට් ස්වයංක්‍රීය පිළිතුරු පද්ධතිය ක්‍රියාත්මකයි (ON)!*",
+        botOff: "🛑 *බොට් ස්වයංක්‍රීය පිළිතුරු පද්ධතිය අක්‍රීයයි (OFF)!*",
+        nameUpdated: "✅ ව්‍යාපාරික නාමය යාවත්කාලීන විය:",
+        phoneUpdated: "✅ Hotline අංකය යාවත්කාලීන විය:",
+        emailUpdated: "✅ Email ලිපිනය යාවත්කාලීන විය:",
+        bankUpdated: "✅ බැංකු ගිණුම් විස්තර සාර්ථකව යාවත්කාලීන විය!",
+        deliveryUpdated: "✅ ඩිලිවරි විස්තර සාර්ථකව යාවත්කාලීන විය!",
+        productAdded: "✅ *භාණ්ඩය සාර්ථකව ඇතුළත් කරන ලදී!*",
+        productDeleted: "🗑️ *භාණ්ඩය සාර්ථකව ඉවත් කරන ලදී!*",
+        noProducts: "📦 දැනට කිසිදු භාණ්ඩයක් ඇතුළත් කර නැත! *.addproduct* භාවිත කරන්න.",
+        imgSaving: "⏳ ඡායාරූපය VPS මත save වෙමින් පවතී...",
+        imgSaved: "🎉 *Welcome ඡායාරූපය සාර්ථකව Save විය!*",
+        imgFailed: "❌ ඡායාරූපය Save කිරීමට නොහැකි විය. නැවත උත්සාහ කරන්න."
     },
     ta: {
-        name: "Tamil",
-        flag: "🇮🇳",
-        welcomeTitle: "நல்வரவு",
-        welcomeSub: "இன்று நாங்கள் உங்களுக்கு எவ்வாறு உதவ முடியும்?\nவிரும்பிய எண் அல்லது சொல்லை அனுப்பவும்:",
-        menu1: "🛍️ பொருட்கள் (அல்லது 1)",
-        menu2: "💳 வங்கி விவரங்கள் (அல்லது 2)",
-        menu3: "🚚 டெலிவரி தகவல் (அல்லது 3)",
-        menu4: "📍 தொடர்பு கொள்ள (அல்லது 4)",
-        menu5: "💬 வாடிக்கையாளர் சேவை (அல்லது 5)",
-        orderPrompt: "📦 ஆர்டர் செய்ய:\nபொருளின் பெயர், உங்கள் பெயர், முகவரி மற்றும் தொலைபேசி எண்ணை அனுப்பவும்.",
-        returnMenu: "🔙 முதன்மை மெனுவுக்கு செல்ல menu என தட்டச்சு செய்யவும்.",
-        bankReceiptPrompt: "⚠️ முக்கியம்: பணம் செலுத்திய பின் ரசீதை அனுப்பவும்.",
-        agentNotified: "💬 எங்கள் பிரதிநிதிக்கு தெரிவிக்கப்பட்டது! விரைவில் உங்களைத் தொடர்புகொள்வார்கள்.",
-        urgentCall: "அவசர தொடர்புக்கு:",
-        adminTitle: "👑 நிர்வாக கட்டுப்பாட்டு மையம் 👑",
-        adminConnected: "🎉 வாட்ஸ்அப் பாட் வெற்றிகரமாக இணைக்கப்பட்டது! 🎉",
-        adminLangSet: "✅ மொழி வெற்றிகரமாக தமிழாக மாற்றப்பட்டது! 🇮🇳"
+        name: "Tamil 🇮🇳",
+        connectedAlert: "🎉 *வாட்ஸ்அப் பாட் வெற்றிகரமாக இணைக்கப்பட்டது!* 🎉\n\n🟢 *நிலை:* VPS இல் 24/7 இயங்குகிறது\n🛡️ *பாதுகாப்பு:* Anti-Ban Shield செயலில் உள்ளது",
+        selectLangPrompt: "🌐 *நிர்வாக மொழி தேர்வு:*\nநிர்வாக கட்டுப்பாட்டுப் பலகத்திற்கான மொழியைத் தேர்ந்தெடுக்கவும்:\n\n1️⃣ 🇱🇰 Sinhala\n2️⃣ 🇬🇧 English\n3️⃣ 🇮🇳 Tamil\n4️⃣ 🇰🇷 Korean\n5️⃣ 🇪🇸 Spanish\n6️⃣ 🇫🇷 French\n\n👉 _எண்ணை அனுப்பவும் (எ.கா: 3)_",
+        langUpdated: "✅ *நிர்வாக மொழி தமிழாக மாற்றப்பட்டது!* 🇮🇳\n\nகட்டுப்பாட்டுப் பலகத்தைக் காண *.help* என தட்டச்சு செய்யவும்.",
+        helpTitle: "👑 *சூப்பர் பாட் நிர்வாக கட்டுப்பாட்டு பலகம்* 👑",
+        helpLang: "🌐 *நிர்வாக மொழி:* தமிழ் 🇮🇳",
+        helpCommands: 
+`⚙️ *மொழி அமைப்புகள்:*
+• *.lang* - நிர்வாக மொழியை மாற்ற
+
+🖼️ *முகப்புப் படம்:*
+• எந்தவொரு புகைப்படத்தையும் *.setimage* என தலைப்பிட்டு அனுப்பவும்
+
+🏪 *கடை விவரங்கள்:*
+• *.setname <பெயர்>* - கடையின் பெயரை மாற்ற
+• *.setphone <எண்>* - தொலைபேசி எண்ணை மாற்ற
+• *.setemail <மின்னஞ்சல்>* - மின்னஞ்சலை மாற்ற
+
+🛍️ *பொருட்கள் மேலாண்மை:*
+• *.addproduct <பொருள் - விலை - தகவல்>* - புதிய பொருளை சேர்க்க
+• *.delproduct <எண்>* - பொருளை நீக்க (எ.கா: .delproduct 1)
+• *.listproducts* - அனைத்து பொருட்களையும் பார்க்க
+
+💳 *பணம் மற்றும் டெலிவரி:*
+• *.setbank <விவரங்கள்>* - வங்கி விவரங்களை மாற்ற
+• *.setdelivery <தகவல்>* - டெலிவரி தகவலை மாற்ற
+
+⚡ *கணினி கட்டுப்பாடுகள்:*
+• *.bot on* / *.bot off* - பாட்டை இயக்க / நிறுத்த
+• *.stats* - சர்வர் நிலை மற்றும் ரேம் விவரங்கள்
+• *.preview* - வாடிக்கையாளர் மெனுவை முன்னோட்டமிட`,
+        botOn: "✅ *தானியங்கி பதிலளிப்பு இயக்கப்பட்டது (ON)!*",
+        botOff: "🛑 *தானியங்கி பதிலளிப்பு நிறுத்தப்பட்டது (OFF)!*",
+        nameUpdated: "✅ கடையின் பெயர் மாற்றப்பட்டது:",
+        phoneUpdated: "✅ தொலைபேசி எண் மாற்றப்பட்டது:",
+        emailUpdated: "✅ மின்னஞ்சல் மாற்றப்பட்டது:",
+        bankUpdated: "✅ வங்கி விவரங்கள் புதுப்பிக்கப்பட்டன!",
+        deliveryUpdated: "✅ டெலிவரி தகவல்கள் புதுப்பிக்கப்பட்டன!",
+        productAdded: "✅ *பொருள் வெற்றிகரமாக சேர்க்கப்பட்டது!*",
+        productDeleted: "🗑️ *பொருள் வெற்றிகரமாக நீக்கப்பட்டது!*",
+        noProducts: "📦 பொருட்கள் எதுவும் இல்லை! *.addproduct* பயன்படுத்தவும்.",
+        imgSaving: "⏳ படம் சேமிக்கப்படுகிறது...",
+        imgSaved: "🎉 *படம் வெற்றிகரமாக சேமிக்கப்பட்டது!*",
+        imgFailed: "❌ படத்தை சேமிக்க முடியவில்லை."
     },
     ko: {
-        name: "Korean",
-        flag: "🇰🇷",
-        welcomeTitle: "환영합니다",
-        welcomeSub: "무엇을 도와드릴까요?\n원하시는 번호나 단어를 답장해 주세요:",
-        menu1: "🛍️ 상품 목록 (또는 1)",
-        menu2: "💳 계좌 안내 (또는 2)",
-        menu3: "🚚 배송 안내 (또는 3)",
-        menu4: "📍 문의처 및 위치 (또는 4)",
-        menu5: "💬 상담원 연결 (또는 5)",
-        orderPrompt: "📦 주문 방법:\n상품명, 성함, 배송지 주소 및 연락처를 남겨주세요.",
-        returnMenu: "🔙 메뉴로 돌아가려면 menu를 입력하세요.",
-        bankReceiptPrompt: "⚠️ 중요: 입금 후 입금 영수증 사진을 보내주세요.",
-        agentNotified: "💬 상담원에게 알림이 전송되었습니다! 영업시간 내에 답변드리겠습니다.",
-        urgentCall: "긴급 문의 전화:",
-        adminTitle: "👑 슈퍼 봇 관리자 대시보드 👑",
-        adminConnected: "🎉 왓츠앱 봇이 성공적으로 연결되었습니다! 🎉",
-        adminLangSet: "✅ 언어가 한국어로 설정되었습니다! 🇰🇷"
+        name: "Korean 🇰🇷",
+        connectedAlert: "🎉 *왓츠앱 봇이 성공적으로 연결되었습니다!* 🎉\n\n🟢 *상태:* VPS에서 24/7 온라인 작동 중\n🛡️ *보안:* 밴 방지 시스템 활성화",
+        selectLangPrompt: "🌐 *관리자 언어 선택:*\n관리자 제어판에 사용할 언어를 선택하세요:\n\n1️⃣ 🇱🇰 Sinhala\n2️⃣ 🇬🇧 English\n3️⃣ 🇮🇳 Tamil\n4️⃣ 🇰🇷 Korean\n5️⃣ 🇪🇸 Spanish\n6️⃣ 🇫🇷 French\n\n👉 _번호를 답장하세요 (예: 4)_",
+        langUpdated: "✅ *관리자 언어가 한국어로 설정되었습니다!* 🇰🇷\n\n대시보드를 확인하려면 *.help*를 입력하세요.",
+        helpTitle: "👑 *슈퍼 봇 관리자 제어판* 👑",
+        helpLang: "🌐 *관리자 언어:* 한국어 🇰🇷",
+        helpCommands: 
+`⚙️ *언어 설정:*
+• *.lang* - 관리자 언어 변경
+
+🖼️ *환영 포스터 이미지:*
+• 사진을 첨부하고 *.setimage* 캡션으로 전송
+
+🏪 *상점 기본 정보:*
+• *.setname <이름>* - 상점 이름 변경
+• *.setphone <번호>* - 고객센터 번호 변경
+• *.setemail <이메일>* - 이메일 변경
+
+🛍️ *상품 관리:*
+• *.addproduct <상품명 - 가격 - 설명>* - 새 상품 등록
+• *.delproduct <번호>* - 상품 삭제 (예: .delproduct 1)
+• *.listproducts* - 등록된 상품 전체 목록 확인
+
+💳 *결제 및 배송:*
+• *.setbank <계좌정보>* - 입금 계좌 변경
+• *.setdelivery <배송정보>* - 배송비 및 기간 변경
+
+⚡ *시스템 제어:*
+• *.bot on* / *.bot off* - 자동응답 켜기/끄기
+• *.stats* - 서버 상태 및 메모리 확인
+• *.preview* - 고객 화면 미리보기`,
+        botOn: "✅ *자동 응답 기능이 켜졌습니다 (ON)!*",
+        botOff: "🛑 *자동 응답 기능이 꺼졌습니다 (OFF)!*",
+        nameUpdated: "✅ 상점 이름이 변경되었습니다:",
+        phoneUpdated: "✅ 연락처가 변경되었습니다:",
+        emailUpdated: "✅ 이메일이 변경되었습니다:",
+        bankUpdated: "✅ 계좌 정보가 수정되었습니다!",
+        deliveryUpdated: "✅ 배송 정보가 수정되었습니다!",
+        productAdded: "✅ *새 상품이 성공적으로 등록되었습니다!*",
+        productDeleted: "🗑️ *상품이 성공적으로 삭제되었습니다!*",
+        noProducts: "📦 등록된 상품이 없습니다. *.addproduct*를 사용하세요.",
+        imgSaving: "⏳ 이미지를 저장하는 중입니다...",
+        imgSaved: "🎉 *환영 이미지가 성공적으로 저장되었습니다!*",
+        imgFailed: "❌ 이미지 저장 실패. 다시 시도해 주세요."
     },
     es: {
-        name: "Spanish",
-        flag: "🇪🇸",
-        welcomeTitle: "Bienvenido a",
-        welcomeSub: "¿Cómo podemos ayudarte hoy?\nResponde con el número o palabra de tu elección:",
-        menu1: "🛍️ Productos (o responde 1)",
-        menu2: "💳 Datos Bancarios (o responde 2)",
-        menu3: "🚚 Envíos y Entrega (o responde 3)",
-        menu4: "📍 Contáctanos (o responde 4)",
-        menu5: "💬 Atención al Cliente (o responde 5)",
-        orderPrompt: "📦 Cómo ordenar:\nEnvía el nombre del producto, tu nombre completo, dirección y teléfono.",
-        returnMenu: "🔙 Responde menu para volver.",
-        bankReceiptPrompt: "⚠️ Importante: Una vez pagado, envía el comprobante de pago.",
-        agentNotified: "💬 ¡Un agente ha sido notificado! Nos pondremos en contacto pronto.",
-        urgentCall: "Para consultas urgentes:",
-        adminTitle: "👑 PANEL DE CONTROL DEL BOT 👑",
-        adminConnected: "🎉 ¡BOT DE WHATSAPP CONECTADO CON ÉXITO! 🎉",
-        adminLangSet: "✅ ¡Idioma configurado en Español! 🇪🇸"
+        name: "Spanish 🇪🇸",
+        connectedAlert: "🎉 *¡BOT DE WHATSAPP CONECTADO CON ÉXITO!* 🎉\n\n🟢 *Estado:* Online 24/7 en VPS\n🛡️ *Seguridad:* Anti-Ban Shield Activo",
+        selectLangPrompt: "🌐 *SELECCIÓN DE IDIOMA DEL ADMINISTRADOR:*\nElige tu idioma para el Panel de Control:\n\n1️⃣ 🇱🇰 Sinhala\n2️⃣ 🇬🇧 English\n3️⃣ 🇮🇳 Tamil\n4️⃣ 🇰🇷 Korean\n5️⃣ 🇪🇸 Spanish\n6️⃣ 🇫🇷 French\n\n👉 _Responde con el número (ej: 5)_",
+        langUpdated: "✅ *¡Idioma del Administrador configurado en Español!* 🇪🇸\n\nEscribe *.help* para ver el Panel de Control.",
+        helpTitle: "👑 *PANEL DE CONTROL DEL ADMINISTRADOR* 👑",
+        helpLang: "🌐 *Idioma del Administrador:* Español 🇪🇸",
+        helpCommands: 
+`⚙️ *Idioma:*
+• *.lang* - Cambiar idioma del administrador
+
+🖼️ *Póster de Bienvenida:*
+• Envía cualquier foto con el texto *.setimage*
+
+🏪 *Datos de la Tienda:*
+• *.setname <Nombre>* - Cambiar nombre de la tienda
+• *.setphone <Teléfono>* - Cambiar teléfono de contacto
+• *.setemail <Email>* - Cambiar correo
+
+🛍️ *Gestión de Productos:*
+• *.addproduct <Nombre - Precio - Info>* - Añadir producto
+• *.delproduct <Número>* - Eliminar producto (ej: .delproduct 1)
+• *.listproducts* - Ver todos los productos activos
+
+💳 *Pagos y Envíos:*
+• *.setbank <Datos>* - Cambiar datos bancarios
+• *.setdelivery <Info>* - Cambiar tarifas de envío
+
+⚡ *Control del Sistema:*
+• *.bot on* / *.bot off* - Activar/Desactivar bot
+• *.stats* - Ver RAM y estado del servidor
+• *.preview* - Vista previa del menú de clientes`,
+        botOn: "✅ *¡El bot ahora está ACTIVO (ON)!*",
+        botOff: "🛑 *¡El bot ahora está APAGADO (OFF)!*",
+        nameUpdated: "✅ Nombre de la tienda actualizado a:",
+        phoneUpdated: "✅ Teléfono actualizado a:",
+        emailUpdated: "✅ Email actualizado a:",
+        bankUpdated: "✅ ¡Datos bancarios actualizados!",
+        deliveryUpdated: "✅ ¡Información de envío actualizada!",
+        productAdded: "✅ *¡Producto añadido con éxito!*",
+        productDeleted: "🗑️ *¡Producto eliminado con éxito!*",
+        noProducts: "📦 ¡No hay productos! Usa *.addproduct*.",
+        imgSaving: "⏳ Guardando imagen...",
+        imgSaved: "🎉 *¡Imagen de bienvenida guardada!*",
+        imgFailed: "❌ Error al guardar la imagen."
     },
     fr: {
-        name: "French",
-        flag: "🇫🇷",
-        welcomeTitle: "Bienvenue chez",
-        welcomeSub: "Comment pouvons-nous vous aider aujourd'hui ?\nVeuillez répondre avec le numéro ou mot-clé :",
-        menu1: "🛍️ Produits (ou répondez 1)",
-        menu2: "💳 Coordonnées Bancaires (ou 2)",
-        menu3: "🚚 Livraison & Expédition (ou 3)",
-        menu4: "📍 Contactez-nous (ou 4)",
-        menu5: "💬 Service Client (ou 5)",
-        orderPrompt: "📦 Comment commander :\nEnvoyez le nom du produit, nom complet, adresse et téléphone.",
-        returnMenu: "🔙 Répondez menu pour revenir.",
-        bankReceiptPrompt: "⚠️ Important : Après paiement, veuillez envoyer une photo du reçu.",
-        agentNotified: "💬 Un agent a été informé ! Nous vous répondrons sous peu.",
-        urgentCall: "Pour toute urgence :",
-        adminTitle: "👑 TABLEAU DE BORD ADMIN 👑",
-        adminConnected: "🎉 BOT WHATSAPP CONNECTÉ AVEC SUCCÈS ! 🎉",
-        adminLangSet: "✅ Langue configurée en Français ! 🇫🇷"
+        name: "French 🇫🇷",
+        connectedAlert: "🎉 *BOT WHATSAPP CONNECTÉ AVEC SUCCÈS !* 🎉\n\n🟢 *Statut :* En ligne 24/7 sur VPS\n🛡️ *Sécurité :* Bouclier Anti-Ban Actif",
+        selectLangPrompt: "🌐 *CHOIX DE LA LANGUE ADMINISTRATEUR :*\nChoisissez votre langue pour le panneau de contrôle :\n\n1️⃣ 🇱🇰 Sinhala\n2️⃣ 🇬🇧 English\n3️⃣ 🇮🇳 Tamil\n4️⃣ 🇰🇷 Korean\n5️⃣ 🇪🇸 Spanish\n6️⃣ 🇫🇷 French\n\n👉 _Répondez avec le numéro (ex : 6)_",
+        langUpdated: "✅ *Langue administrateur configurée en Français !* 🇫🇷\n\nTapez *.help* pour voir le panneau d'administration.",
+        helpTitle: "👑 *PANNEAU DE CONTRÔLE ADMINISTRATEUR* 👑",
+        helpLang: "🌐 *Langue Administrateur :* Français 🇫🇷",
+        helpCommands: 
+`⚙️ *Langue :*
+• *.lang* - Changer la langue admin
+
+🖼️ *Affiche de Bienvenue :*
+• Envoyez une photo avec la légende *.setimage*
+
+🏪 *Boutique :*
+• *.setname <Nom>* - Modifier le nom
+• *.setphone <Tél>* - Modifier le numéro
+• *.setemail <Email>* - Modifier l'email
+
+🛍️ *Gestion des Produits :*
+• *.addproduct <Article - Prix - Info>* - Ajouter un produit
+• *.delproduct <Numéro>* - Supprimer un produit
+• *.listproducts* - Voir tous les produits
+
+💳 *Paiement & Livraison :*
+• *.setbank <Détails>* - Modifier coordonnées bancaires
+• *.setdelivery <Info>* - Modifier infos livraison
+
+⚡ *Contrôle Système :*
+• *.bot on* / *.bot off* - Activer/Désactiver le bot
+• *.stats* - Statut serveur et mémoire
+• *.preview* - Aperçu du menu client`,
+        botOn: "✅ *Le bot est maintenant ACTIF (ON) !*",
+        botOff: "🛑 *Le bot est maintenant DÉSACTIVÉ (OFF) !*",
+        nameUpdated: "✅ Nom de la boutique mis à jour :",
+        phoneUpdated: "✅ Téléphone mis à jour :",
+        emailUpdated: "✅ Email mis à jour :",
+        bankUpdated: "✅ Coordonnées bancaires mises à jour !",
+        deliveryUpdated: "✅ Informations de livraison mises à jour !",
+        productAdded: "✅ *Produit ajouté avec succès !*",
+        productDeleted: "🗑️ *Produit supprimé avec succès !*",
+        noProducts: "📦 Aucun produit trouvé. Utilisez *.addproduct*.",
+        imgSaving: "⏳ Enregistrement de l'image...",
+        imgSaved: "🎉 *Image de bienvenue enregistrée !*",
+        imgFailed: "❌ Échec de l'enregistrement."
     }
 };
 
 const defaultSettings = {
     botEnabled: true,
-    language: "en",
-    awaitingLangChoice: false,
+    adminLang: "en", // default admin language
+    awaitingAdminLang: false,
     businessName: "Apex Store & Solutions",
     hotline: "+94 7X XXX XXXX",
     email: "support@apexstore.com",
     bankDetails: "🏦 Bank: Commercial Bank\n👤 Account Name: Apex Store\n🔢 Account Number: 800123456789\n📍 Branch: Colombo Main",
-    deliveryInfo: "• Local / Metro: 24 - 48 Hours\n• Islandwide: 2 - 3 Days\n• Cash on Delivery (COD) Available!",
+    deliveryInfo: "• Local / Metro: 24 - 48 Hours\n• Islandwide / Nationwide: 2 - 3 Days\n• Cash on Delivery (COD) Available!",
     products: [
         "Premium Item A - LKR 3,500 (High quality edition)",
         "Pro Pack B - LKR 5,200 (Full accessories included)",
@@ -159,48 +318,6 @@ function saveSettings(settings) {
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
 }
 
-function buildMainMenu(settings) {
-    const l = LANGUAGES[settings.language] || LANGUAGES.en;
-    return `👋 *${l.welcomeTitle} ${settings.businessName}!*
-
-${l.welcomeSub}
-
-1️⃣ ${l.menu1}
-2️⃣ ${l.menu2}
-3️⃣ ${l.menu3}
-4️⃣ ${l.menu4}
-5️⃣ ${l.menu5}
-
-_Example: Reply *1*_`;
-}
-
-function buildProductsList(settings) {
-    const l = LANGUAGES[settings.language] || LANGUAGES.en;
-    if (!settings.products || settings.products.length === 0) {
-        return `🛍️ *PRODUCTS*\n\n_No products listed at the moment._\n\n${l.returnMenu}`;
-    }
-    const formatted = settings.products.map((p, i) => `${i + 1}. ${p}`).join('\n\n');
-    return `🛍️ *PRODUCTS & SERVICES*\n\n${formatted}\n\n${l.orderPrompt}\n\n${l.returnMenu}`;
-}
-
-const LANG_CHOICE_MSG = 
-`🌐 *CHOOSE BOT LANGUAGE / භාෂාව තෝරන්න:*
-
-Please select the language:
-කරුණාකර භාෂාවේ අංකය Reply කරන්න:
-
-1️⃣ 🇱🇰 *Sinhala* (සිංහල)
-2️⃣ 🇬🇧 *English*
-3️⃣ 🇮🇳 *Tamil* (தமிழ்)
-4️⃣ 🇰🇷 *Korean* (한국어)
-5️⃣ 🇪🇸 *Spanish* (Español)
-6️⃣ 🇫🇷 *French* (Français)
-
-👉 _Reply with number (e.g. 1 or 2)_`;
-
-// Keep message store to resolve decryption
-const messageStore = {};
-
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_session');
     const { version } = await fetchLatestBaileysVersion();
@@ -214,15 +331,7 @@ async function connectToWhatsApp() {
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
         },
         generateHighQualityLinkPreview: true,
-        syncFullHistory: false,
-        msgRetryCounterCache,
-        // Crucial for resolving "Waiting for this message"
-        getMessage: async (key) => {
-            if (messageStore[key.id]) {
-                return messageStore[key.id].message;
-            }
-            return undefined;
-        }
+        syncFullHistory: false
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -231,44 +340,37 @@ async function connectToWhatsApp() {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
-            console.log('\n👑 Super WhatsApp Bot is ONLINE and Decryption Cache Ready!\n');
+            console.log('\n👑 Super WhatsApp Bot is ONLINE 24/7 on VPS!\n');
+
+            try {
+                const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                const settings = getSettings();
+                settings.awaitingAdminLang = true;
+                saveSettings(settings);
+
+                const currentAdmin = ADMIN_LANGUAGES[settings.adminLang] || ADMIN_LANGUAGES.en;
+                const startupMessage = 
+`${currentAdmin.connectedAlert}
+
+════════════════════════════
+${currentAdmin.selectLangPrompt}
+════════════════════════════`;
+
+                // Send without quoted msg to prevent self-chat decryption freeze
+                await sock.sendMessage(myJid, { text: startupMessage });
+            } catch (err) {
+                console.error('Failed to send admin startup alert:', err);
+            }
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
-
-    async function safeReply(from, text, quotedMsg) {
-        await sock.sendPresenceUpdate('composing', from);
-        await sleep(1000);
-        await sock.sendPresenceUpdate('paused', from);
-        return await sock.sendMessage(from, { text }, { quoted: quotedMsg });
-    }
-
-    async function sendWelcome(from, text, quotedMsg) {
-        await sock.sendPresenceUpdate('composing', from);
-        await sleep(1200);
-        await sock.sendPresenceUpdate('paused', from);
-
-        if (fs.existsSync(IMAGE_FILE)) {
-            return await sock.sendMessage(from, {
-                image: fs.readFileSync(IMAGE_FILE),
-                caption: text
-            }, { quoted: quotedMsg });
-        } else {
-            return await sock.sendMessage(from, { text }, { quoted: quotedMsg });
-        }
-    }
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
 
         for (const msg of messages) {
             if (!msg.message) continue;
-
-            // Cache message for retry decryption
-            if (msg.key && msg.key.id) {
-                messageStore[msg.key.id] = msg;
-            }
 
             const from = msg.key.remoteJid;
             const isFromMe = msg.key.fromMe;
@@ -286,35 +388,47 @@ async function connectToWhatsApp() {
             if (from === 'status@broadcast') continue;
 
             let settings = getSettings();
-            const l = LANGUAGES[settings.language] || LANGUAGES.en;
+            let adminL = ADMIN_LANGUAGES[settings.adminLang] || ADMIN_LANGUAGES.en;
 
-            // ==========================================
-            // 🛡️ ADMIN MODE ("Message Yourself" Only)
-            // ==========================================
+            // ========================================================
+            // 🛡️ ADMIN MODE (Focus purely on Admin Control & Language)
+            // ========================================================
             if (isFromMe) {
-                // Language Selection Handler
+                // Admin Language Switcher Handler
                 const langMap = { '1': 'si', '2': 'en', '3': 'ta', '4': 'ko', '5': 'es', '6': 'fr' };
-                if (settings.awaitingLangChoice && langMap[textLower]) {
-                    settings.language = langMap[textLower];
-                    settings.awaitingLangChoice = false;
+                if (settings.awaitingAdminLang && langMap[textLower]) {
+                    settings.adminLang = langMap[textLower];
+                    settings.awaitingAdminLang = false;
                     saveSettings(settings);
-                    const selected = LANGUAGES[settings.language];
-                    await sock.sendMessage(from, { 
-                        text: `${selected.adminLangSet}\n\n👉 Type *.help* to view your Admin Dashboard!` 
-                    });
+                    
+                    const newlySelected = ADMIN_LANGUAGES[settings.adminLang];
+                    await sock.sendMessage(from, { text: newlySelected.langUpdated });
                     continue;
                 }
 
+                // If admin types .lang anytime
                 if (textLower === '.lang' || textLower === '.language') {
-                    settings.awaitingLangChoice = true;
+                    settings.awaitingAdminLang = true;
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: LANG_CHOICE_MSG });
+                    await sock.sendMessage(from, { text: adminL.selectLangPrompt });
                     continue;
                 }
 
+                // Admin Help / Dashboard in Admin's Chosen Language
+                if (textLower === '.help' || textLower === '.admin') {
+                    const dashboard = 
+`${adminL.helpTitle}
+${adminL.helpLang}
+
+${adminL.helpCommands}`;
+                    await sock.sendMessage(from, { text: dashboard });
+                    continue;
+                }
+
+                // Set Image
                 if (isImage && (textLower === '.setimage' || textLower === '.image')) {
                     try {
-                        await sock.sendMessage(from, { text: '⏳ Downloading and saving Welcome Image...' });
+                        await sock.sendMessage(from, { text: adminL.imgSaving });
                         const buffer = await downloadMediaMessage(
                             msg,
                             'buffer',
@@ -322,89 +436,61 @@ async function connectToWhatsApp() {
                             { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
                         );
                         fs.writeFileSync(IMAGE_FILE, buffer);
-                        await sock.sendMessage(from, { text: '🎉 *Success!* Welcome Image has been saved!' });
+                        await sock.sendMessage(from, { text: adminL.imgSaved });
                     } catch (err) {
-                        await sock.sendMessage(from, { text: '❌ Failed to save image. Please try again.' });
+                        await sock.sendMessage(from, { text: adminL.imgFailed });
                     }
                     continue;
                 }
 
-                if (textLower === '.help' || textLower === '.admin') {
-                    const adminHelp = 
-`${l.adminTitle}
-🌐 *Current Language:* ${l.name} ${l.flag}
-
-⚙️ *Language Control:*
-• *.lang* - Switch language (Sinhala, English, Tamil, Korean, Spanish, French)
-
-🖼️ *Welcome Image:*
-• Send any photo with caption *.setimage*
-
-🏪 *Store Identity:*
-• *.setname <Name>* - Update Store Name
-• *.setphone <Number>* - Update Hotline
-• *.setemail <Email>* - Update Email
-
-🛍️ *Product Management:*
-• *.addproduct <Item - Price - Info>* - Add new product
-• *.delproduct <Number>* - Delete product (e.g. .delproduct 1)
-• *.listproducts* - List active products
-
-💳 *Payment & Delivery:*
-• *.setbank <Details>* - Update Bank Details
-• *.setdelivery <Info>* - Update Delivery Info
-
-⚙️ *System Control:*
-• *.bot on* / *.bot off* - Turn Bot ON/OFF
-• *.preview* - Preview customer welcome screen
-• *.stats* - Server RAM & Uptime`;
-                    await sock.sendMessage(from, { text: adminHelp });
-                    continue;
-                }
-
+                // Bot On / Off
                 if (textLower === '.bot on') {
                     settings.botEnabled = true;
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: '✅ *Bot Auto-Reply is now ON!*' });
+                    await sock.sendMessage(from, { text: adminL.botOn });
                     continue;
                 }
                 if (textLower === '.bot off') {
                     settings.botEnabled = false;
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: '🛑 *Bot Auto-Reply is now OFF!*' });
+                    await sock.sendMessage(from, { text: adminL.botOff });
                     continue;
                 }
 
+                // Set Store Name
                 if (textLower.startsWith('.setname ')) {
                     const val = text.slice(9).trim();
                     if (val) {
                         settings.businessName = val;
                         saveSettings(settings);
-                        await sock.sendMessage(from, { text: `✅ Business Name updated to: *${val}*` });
+                        await sock.sendMessage(from, { text: `${adminL.nameUpdated} *${val}*` });
                     }
                     continue;
                 }
 
+                // Set Phone
                 if (textLower.startsWith('.setphone ')) {
                     const val = text.slice(10).trim();
                     if (val) {
                         settings.hotline = val;
                         saveSettings(settings);
-                        await sock.sendMessage(from, { text: `✅ Hotline updated to: *${val}*` });
+                        await sock.sendMessage(from, { text: `${adminL.phoneUpdated} *${val}*` });
                     }
                     continue;
                 }
 
+                // Set Email
                 if (textLower.startsWith('.setemail ')) {
                     const val = text.slice(10).trim();
                     if (val) {
                         settings.email = val;
                         saveSettings(settings);
-                        await sock.sendMessage(from, { text: `✅ Email updated to: *${val}*` });
+                        await sock.sendMessage(from, { text: `${adminL.emailUpdated} *${val}*` });
                     }
                     continue;
                 }
 
+                // Add Product
                 if (textLower.startsWith('.addproduct ')) {
                     const productStr = text.slice(12).trim();
                     if (productStr) {
@@ -412,62 +498,61 @@ async function connectToWhatsApp() {
                         settings.products.push(productStr);
                         saveSettings(settings);
                         await sock.sendMessage(from, { 
-                            text: `✅ *Product Added!*\n\n📦 ${productStr}\n📊 Total: ${settings.products.length}` 
+                            text: `${adminL.productAdded}\n\n📦 ${productStr}\n📊 Total: ${settings.products.length}` 
                         });
                     }
                     continue;
                 }
 
+                // Delete Product
                 if (textLower.startsWith('.delproduct ')) {
                     const idx = parseInt(text.slice(12).trim()) - 1;
                     if (!isNaN(idx) && settings.products && idx >= 0 && idx < settings.products.length) {
                         const removed = settings.products.splice(idx, 1);
                         saveSettings(settings);
                         await sock.sendMessage(from, { 
-                            text: `🗑️ Deleted: "${removed[0]}"\n📊 Remaining: ${settings.products.length}` 
+                            text: `${adminL.productDeleted}\n"${removed[0]}"\n📊 Total: ${settings.products.length}` 
                         });
                     } else {
-                        await sock.sendMessage(from, { text: '❌ Invalid number. Use *.listproducts*' });
+                        await sock.sendMessage(from, { text: '❌ Invalid index. Use *.listproducts*' });
                     }
                     continue;
                 }
 
+                // List Products
                 if (textLower === '.listproducts') {
                     if (!settings.products || settings.products.length === 0) {
-                        await sock.sendMessage(from, { text: '📦 No products added yet! Use *.addproduct*' });
+                        await sock.sendMessage(from, { text: adminL.noProducts });
                     } else {
                         const list = settings.products.map((p, i) => `*${i + 1}.* ${p}`).join('\n\n');
-                        await sock.sendMessage(from, { text: `🛍️ *PRODUCTS LIST:*\n\n${list}\n\n_To delete, send *.delproduct <num>*_` });
+                        await sock.sendMessage(from, { text: `🛍️ *PRODUCTS:*\n\n${list}` });
                     }
                     continue;
                 }
 
+                // Set Bank
                 if (textLower.startsWith('.setbank ')) {
                     const val = text.slice(9).trim();
                     if (val) {
                         settings.bankDetails = val;
                         saveSettings(settings);
-                        await sock.sendMessage(from, { text: `✅ Bank Details updated!` });
+                        await sock.sendMessage(from, { text: adminL.bankUpdated });
                     }
                     continue;
                 }
 
+                // Set Delivery
                 if (textLower.startsWith('.setdelivery ')) {
                     const val = text.slice(13).trim();
                     if (val) {
                         settings.deliveryInfo = val;
                         saveSettings(settings);
-                        await sock.sendMessage(from, { text: `✅ Delivery Info updated!` });
+                        await sock.sendMessage(from, { text: adminL.deliveryUpdated });
                     }
                     continue;
                 }
 
-                if (textLower === '.preview') {
-                    await sock.sendMessage(from, { text: `👁️ *Previewing Customer Welcome (${l.name}):*` });
-                    await sendWelcome(from, buildMainMenu(settings), null);
-                    continue;
-                }
-
+                // Stats
                 if (textLower === '.stats') {
                     const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
                     const uptimeSec = Math.floor(process.uptime());
@@ -477,7 +562,7 @@ async function connectToWhatsApp() {
                     const statsMsg = 
 `📊 *SYSTEM STATUS*
 • 🟢 *State:* ${settings.botEnabled ? 'Active (ON)' : 'Muted (OFF)'}
-• 🌐 *Language:* ${l.name} ${l.flag}
+• 🌐 *Admin Language:* ${adminL.name}
 • 🏪 *Store:* ${settings.businessName}
 • 🛍️ *Products:* ${settings.products?.length || 0}
 • 🖼️ *Poster:* ${fs.existsSync(IMAGE_FILE) ? 'Active ✅' : 'Default ⚠️'}
@@ -486,57 +571,6 @@ async function connectToWhatsApp() {
                     await sock.sendMessage(from, { text: statsMsg });
                     continue;
                 }
-            }
-
-            // ==========================================
-            // 👥 CUSTOMER MODE
-            // ==========================================
-            if (!settings.botEnabled || isFromMe) continue;
-
-            const BANK_MSG = 
-`💳 *BANK & PAYMENT DETAILS*
-
-${settings.bankDetails}
-
-${l.bankReceiptPrompt}
-
-${l.returnMenu}`;
-
-            const DELIVERY_MSG = 
-`🚚 *SHIPPING & DELIVERY*
-
-${settings.deliveryInfo}
-
-${l.returnMenu}`;
-
-            const CONTACT_MSG = 
-`📍 *CONTACT US*
-
-📞 *Hotline:* ${settings.hotline}
-📧 *Email:* ${settings.email}
-
-${l.returnMenu}`;
-
-            const AGENT_MSG = 
-`${l.agentNotified}
-${l.urgentCall} *${settings.hotline}*
-
-${l.returnMenu}`;
-
-            if (['1', 'products', 'product', 'catalog', 'price', 'prices'].includes(textLower)) {
-                await safeReply(from, buildProductsList(settings), msg);
-            } else if (['2', 'bank', 'payment', 'pay'].includes(textLower)) {
-                await safeReply(from, BANK_MSG, msg);
-            } else if (['3', 'delivery', 'shipping'].includes(textLower)) {
-                await safeReply(from, DELIVERY_MSG, msg);
-            } else if (['4', 'contact', 'location', 'address'].includes(textLower)) {
-                await safeReply(from, CONTACT_MSG, msg);
-            } else if (['5', 'agent', 'support', 'human'].includes(textLower)) {
-                await safeReply(from, AGENT_MSG, msg);
-            } else if (textLower === '!ping') {
-                await safeReply(from, '🏓 Pong! Business Bot is active 24/7 on VPS.', msg);
-            } else if (['hi', 'hello', 'hey', 'menu', '!menu', 'help', 'start'].includes(textLower)) {
-                await sendWelcome(from, buildMainMenu(settings), msg);
             }
         }
     });
