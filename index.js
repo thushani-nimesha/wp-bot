@@ -1,4 +1,4 @@
-import { default as makeWASocket, DisconnectReason, useMultiFileAuthState, downloadMediaMessage, fetchLatestBaileysVersion, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys';
+import { default as makeWASocket, DisconnectReason, useMultiFileAuthState, downloadMediaMessage, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, jidNormalizedUser } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
 
@@ -288,8 +288,8 @@ const ADMIN_LANGUAGES = {
 
 const defaultSettings = {
     botEnabled: true,
-    adminLang: "en", // default admin language
-    awaitingAdminLang: false,
+    adminLang: "en",
+    awaitingAdminLang: true,
     businessName: "Apex Store & Solutions",
     hotline: "+94 7X XXX XXXX",
     email: "support@apexstore.com",
@@ -342,25 +342,29 @@ async function connectToWhatsApp() {
         } else if (connection === 'open') {
             console.log('\n👑 Super WhatsApp Bot is ONLINE 24/7 on VPS!\n');
 
-            try {
-                const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                const settings = getSettings();
-                settings.awaitingAdminLang = true;
-                saveSettings(settings);
+            // Send Admin Onboarding to Message Yourself
+            setTimeout(async () => {
+                try {
+                    const normalizedJid = jidNormalizedUser(sock.user.id);
+                    const settings = getSettings();
+                    settings.awaitingAdminLang = true;
+                    saveSettings(settings);
 
-                const currentAdmin = ADMIN_LANGUAGES[settings.adminLang] || ADMIN_LANGUAGES.en;
-                const startupMessage = 
+                    const currentAdmin = ADMIN_LANGUAGES[settings.adminLang] || ADMIN_LANGUAGES.en;
+                    const startupMessage = 
 `${currentAdmin.connectedAlert}
 
 ════════════════════════════
 ${currentAdmin.selectLangPrompt}
 ════════════════════════════`;
 
-                // Send without quoted msg to prevent self-chat decryption freeze
-                await sock.sendMessage(myJid, { text: startupMessage });
-            } catch (err) {
-                console.error('Failed to send admin startup alert:', err);
-            }
+                    // Using direct peer delivery for self-chat
+                    await sock.sendMessage(normalizedJid, { text: startupMessage });
+                    console.log('📬 Admin startup prompt delivered successfully!');
+                } catch (err) {
+                    console.error('Error sending startup alert:', err);
+                }
+            }, 3000); // 3-second delay to ensure Signal session is synchronized
         }
     });
 
@@ -394,7 +398,7 @@ ${currentAdmin.selectLangPrompt}
             // 🛡️ ADMIN MODE (Focus purely on Admin Control & Language)
             // ========================================================
             if (isFromMe) {
-                // Admin Language Switcher Handler
+                // Language Selection Handler
                 const langMap = { '1': 'si', '2': 'en', '3': 'ta', '4': 'ko', '5': 'es', '6': 'fr' };
                 if (settings.awaitingAdminLang && langMap[textLower]) {
                     settings.adminLang = langMap[textLower];
@@ -406,7 +410,6 @@ ${currentAdmin.selectLangPrompt}
                     continue;
                 }
 
-                // If admin types .lang anytime
                 if (textLower === '.lang' || textLower === '.language') {
                     settings.awaitingAdminLang = true;
                     saveSettings(settings);
@@ -414,7 +417,6 @@ ${currentAdmin.selectLangPrompt}
                     continue;
                 }
 
-                // Admin Help / Dashboard in Admin's Chosen Language
                 if (textLower === '.help' || textLower === '.admin') {
                     const dashboard = 
 `${adminL.helpTitle}
@@ -425,7 +427,6 @@ ${adminL.helpCommands}`;
                     continue;
                 }
 
-                // Set Image
                 if (isImage && (textLower === '.setimage' || textLower === '.image')) {
                     try {
                         await sock.sendMessage(from, { text: adminL.imgSaving });
@@ -443,7 +444,6 @@ ${adminL.helpCommands}`;
                     continue;
                 }
 
-                // Bot On / Off
                 if (textLower === '.bot on') {
                     settings.botEnabled = true;
                     saveSettings(settings);
@@ -457,7 +457,6 @@ ${adminL.helpCommands}`;
                     continue;
                 }
 
-                // Set Store Name
                 if (textLower.startsWith('.setname ')) {
                     const val = text.slice(9).trim();
                     if (val) {
@@ -468,7 +467,6 @@ ${adminL.helpCommands}`;
                     continue;
                 }
 
-                // Set Phone
                 if (textLower.startsWith('.setphone ')) {
                     const val = text.slice(10).trim();
                     if (val) {
@@ -479,7 +477,6 @@ ${adminL.helpCommands}`;
                     continue;
                 }
 
-                // Set Email
                 if (textLower.startsWith('.setemail ')) {
                     const val = text.slice(10).trim();
                     if (val) {
@@ -490,7 +487,6 @@ ${adminL.helpCommands}`;
                     continue;
                 }
 
-                // Add Product
                 if (textLower.startsWith('.addproduct ')) {
                     const productStr = text.slice(12).trim();
                     if (productStr) {
@@ -504,7 +500,6 @@ ${adminL.helpCommands}`;
                     continue;
                 }
 
-                // Delete Product
                 if (textLower.startsWith('.delproduct ')) {
                     const idx = parseInt(text.slice(12).trim()) - 1;
                     if (!isNaN(idx) && settings.products && idx >= 0 && idx < settings.products.length) {
@@ -519,7 +514,6 @@ ${adminL.helpCommands}`;
                     continue;
                 }
 
-                // List Products
                 if (textLower === '.listproducts') {
                     if (!settings.products || settings.products.length === 0) {
                         await sock.sendMessage(from, { text: adminL.noProducts });
@@ -530,7 +524,6 @@ ${adminL.helpCommands}`;
                     continue;
                 }
 
-                // Set Bank
                 if (textLower.startsWith('.setbank ')) {
                     const val = text.slice(9).trim();
                     if (val) {
@@ -541,7 +534,6 @@ ${adminL.helpCommands}`;
                     continue;
                 }
 
-                // Set Delivery
                 if (textLower.startsWith('.setdelivery ')) {
                     const val = text.slice(13).trim();
                     if (val) {
@@ -552,7 +544,6 @@ ${adminL.helpCommands}`;
                     continue;
                 }
 
-                // Stats
                 if (textLower === '.stats') {
                     const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
                     const uptimeSec = Math.floor(process.uptime());
