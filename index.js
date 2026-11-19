@@ -37,7 +37,6 @@ function saveSettings(settings) {
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
 }
 
-// Build Customer Main Menu
 function buildMainMenu(settings) {
     return `👋 *Welcome to ${settings.businessName}!*
 
@@ -54,7 +53,6 @@ Please reply with the *number* or *keyword* of your choice:
 _Example: Reply with *1* or *products*_`;
 }
 
-// Build Customer Products List
 function buildProductsList(settings) {
     if (!settings.products || settings.products.length === 0) {
         return `🛍️ *OUR PRODUCTS & SERVICES*\n\n_No products listed at the moment. Please contact our hotline!_\n\n🔙 Reply *menu* to return.`;
@@ -79,20 +77,40 @@ async function connectToWhatsApp() {
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
             console.log('\n👑 Super WhatsApp Business Bot is ONLINE 24/7!\n');
+
+            // 🚀 AUTO-NOTIFY ADMIN ON MESSAGE YOURSELF
+            try {
+                const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                const settings = getSettings();
+                const notifyMsg = 
+`🎉 *WHATSAPP BOT CONNECTED SUCCESSFULLY!* 🎉
+
+🟢 *Status:* Online & Active 24/7 on VPS
+🛡️ *Anti-Ban Shield:* Enabled (Safe Mode)
+🏪 *Business:* ${settings.businessName}
+🛍️ *Active Products:* ${settings.products?.length || 0}
+🖼️ *Welcome Poster:* ${fs.existsSync(IMAGE_FILE) ? 'Active ✅' : 'Default/None ⚠️'}
+
+💡 Type *.help* here anytime to open your *Admin Control Panel*!
+🚀 _Ready to serve your customers seamlessly._`;
+
+                await sock.sendMessage(myJid, { text: notifyMsg });
+                console.log('📬 Admin startup notification sent to Message Yourself!');
+            } catch (err) {
+                console.error('Failed to send admin startup alert:', err);
+            }
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Anti-Ban Human Emulation Reply
     async function safeReply(from, text, quotedMsg) {
         await sock.sendPresenceUpdate('composing', from);
-        await sleep(1200); // Realistic 1.2s typing pause
+        await sleep(1200);
         await sock.sendPresenceUpdate('paused', from);
         await sock.sendMessage(from, { text }, { quoted: quotedMsg });
     }
 
-    // Send Welcome Message with Image
     async function sendWelcome(from, text, quotedMsg) {
         await sock.sendPresenceUpdate('composing', from);
         await sleep(1500);
@@ -104,7 +122,7 @@ async function connectToWhatsApp() {
                 caption: text
             }, { quoted: quotedMsg });
         } else {
-            await sock.sendMessage(from, { text }, { quoted: quotedMsg });
+            await sock.sendMessage(from, { text: captionText || text }, { quoted: quotedMsg });
         }
     }
 
@@ -135,7 +153,7 @@ async function connectToWhatsApp() {
             // 🛡️ ADMIN MODE ("Message Yourself" Only)
             // ==========================================
             if (isFromMe) {
-                // Set Image by sending Photo with caption .setimage
+                // Set Image
                 if (isImage && (textLower === '.setimage' || textLower === '.image')) {
                     try {
                         await sock.sendMessage(from, { text: '⏳ Downloading and saving Welcome Image...' });
@@ -157,7 +175,7 @@ async function connectToWhatsApp() {
                     continue;
                 }
 
-                // Admin Help / Dashboard
+                // Admin Help
                 if (textLower === '.help' || textLower === '.admin') {
                     const adminHelp = 
 `👑 *SUPER BOT ADMIN DASHBOARD* 👑
@@ -188,7 +206,6 @@ _Manage your business entirely from WhatsApp!_
                     continue;
                 }
 
-                // Bot On / Off
                 if (textLower === '.bot on') {
                     settings.botEnabled = true;
                     saveSettings(settings);
@@ -202,7 +219,6 @@ _Manage your business entirely from WhatsApp!_
                     continue;
                 }
 
-                // Set Name
                 if (textLower.startsWith('.setname ')) {
                     const val = text.slice(9).trim();
                     if (val) {
@@ -213,7 +229,6 @@ _Manage your business entirely from WhatsApp!_
                     continue;
                 }
 
-                // Set Phone
                 if (textLower.startsWith('.setphone ')) {
                     const val = text.slice(10).trim();
                     if (val) {
@@ -224,7 +239,6 @@ _Manage your business entirely from WhatsApp!_
                     continue;
                 }
 
-                // Set Email
                 if (textLower.startsWith('.setemail ')) {
                     const val = text.slice(10).trim();
                     if (val) {
@@ -235,7 +249,6 @@ _Manage your business entirely from WhatsApp!_
                     continue;
                 }
 
-                // Add Product
                 if (textLower.startsWith('.addproduct ')) {
                     const productStr = text.slice(12).trim();
                     if (productStr) {
@@ -249,7 +262,6 @@ _Manage your business entirely from WhatsApp!_
                     continue;
                 }
 
-                // Delete Product
                 if (textLower.startsWith('.delproduct ')) {
                     const idxStr = text.slice(12).trim();
                     const idx = parseInt(idxStr) - 1;
@@ -265,7 +277,6 @@ _Manage your business entirely from WhatsApp!_
                     continue;
                 }
 
-                // List Products (Admin view)
                 if (textLower === '.listproducts') {
                     if (!settings.products || settings.products.length === 0) {
                         await sock.sendMessage(from, { text: '📦 No products added yet! Use *.addproduct* to add items.' });
@@ -276,7 +287,6 @@ _Manage your business entirely from WhatsApp!_
                     continue;
                 }
 
-                // Set Bank
                 if (textLower.startsWith('.setbank ')) {
                     const val = text.slice(9).trim();
                     if (val) {
@@ -287,7 +297,6 @@ _Manage your business entirely from WhatsApp!_
                     continue;
                 }
 
-                // Set Delivery
                 if (textLower.startsWith('.setdelivery ')) {
                     const val = text.slice(13).trim();
                     if (val) {
@@ -298,14 +307,12 @@ _Manage your business entirely from WhatsApp!_
                     continue;
                 }
 
-                // Preview Customer Welcome
                 if (textLower === '.preview') {
                     await sock.sendMessage(from, { text: '👁️ *Previewing Customer Welcome Message:*' });
                     await sendWelcome(from, buildMainMenu(settings), null);
                     continue;
                 }
 
-                // Stats
                 if (textLower === '.stats') {
                     const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
                     const uptimeSec = Math.floor(process.uptime());
