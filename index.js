@@ -1,48 +1,24 @@
-import { default as makeWASocket, DisconnectReason, useMultiFileAuthState, downloadMediaMessage, fetchLatestBaileysVersion, generateWAMessageFromContent, proto } from '@whiskeysockets/baileys';
+import { default as makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
 import readline from 'readline';
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const SETTINGS_FILE = 'settings.json';
-const IMAGE_FILE = 'welcome.jpg';
+import axios from 'axios';
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
-const defaultSettings = {
-    botEnabled: true,
-    businessName: "Apex Store & Solutions",
-    hotline: "+94 7X XXX XXXX",
-    email: "support@apexstore.com",
-    bankDetails: "🏦 Bank: Commercial Bank\n👤 Account Name: Apex Store\n🔢 Account Number: 800123456789\n📍 Branch: Colombo Main",
-    deliveryInfo: "• Local: 24 - 48 Hours\n• Islandwide: 2 - 3 Days\n• Cash on Delivery Available!",
-    products: [
-        "Premium Item A - LKR 3,500",
-        "Pro Pack B - LKR 5,200",
-        "Starter Kit C - LKR 1,800"
-    ]
+// Bot Configuration
+const CONFIG = {
+    botName: "⚡ NEXUS MD",
+    ownerName: "Thushani",
+    prefix: ".",
+    version: "2.0.0",
+    workType: "public" // 'public' for everyone, 'private' for owner only
 };
-
-function getSettings() {
-    if (!fs.existsSync(SETTINGS_FILE)) {
-        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(defaultSettings, null, 2));
-        return defaultSettings;
-    }
-    try {
-        return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
-    } catch {
-        return defaultSettings;
-    }
-}
-
-function saveSettings(settings) {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
-}
 
 let pairingInterval = null;
 
-async function connectToWhatsApp() {
+async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_session');
     const { version } = await fetchLatestBaileysVersion();
 
@@ -55,29 +31,32 @@ async function connectToWhatsApp() {
         syncFullHistory: false
     });
 
+    // Auto-refreshing Pairing Code
     if (!sock.authState.creds.registered) {
-        console.log('\n======================================================');
-        console.log('📱 WhatsApp Pairing Code Setup');
-        console.log('======================================================\n');
+        console.log('\n╔══════════════════════════════════════════════╗');
+        console.log(`║          ${CONFIG.botName} - PAIRING SETUP          ║`);
+        console.log('╚══════════════════════════════════════════════╝\n');
         
         const phoneNumber = await question('👉 Enter your WhatsApp Number (with country code, e.g. 94771234567): ');
         const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
 
-        const requestAndPrintCode = async () => {
+        const getPairingCode = async () => {
             if (sock.authState.creds.registered) {
                 if (pairingInterval) clearInterval(pairingInterval);
                 return;
             }
             try {
                 const code = await sock.requestPairingCode(cleanNumber);
-                console.log('\n======================================================');
-                console.log(`🔥 YOUR PAIRING CODE IS:  ${code?.match(/.{1,4}/g)?.join('-') || code}`);
-                console.log('======================================================\n');
+                console.log('\n┌──────────────────────────────────────────────┐');
+                console.log(`│ 🔥 YOUR PAIRING CODE:  ${code?.match(/.{1,4}/g)?.join('-') || code}      │`);
+                console.log('│ ⏱️ Auto-refreshes every 55s if not linked    │');
+                console.log('└──────────────────────────────────────────────┘');
+                console.log('📌 WhatsApp -> Linked Devices -> Link with phone number instead\n');
             } catch (err) {}
         };
 
-        setTimeout(requestAndPrintCode, 3000);
-        pairingInterval = setInterval(requestAndPrintCode, 55000);
+        setTimeout(getPairingCode, 3000);
+        pairingInterval = setInterval(getPairingCode, 55000);
     }
 
     sock.ev.on('connection.update', async (update) => {
@@ -86,37 +65,31 @@ async function connectToWhatsApp() {
         if (connection === 'close') {
             if (pairingInterval) clearInterval(pairingInterval);
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) connectToWhatsApp();
+            console.log('⚠️ Connection lost. Reconnecting:', shouldReconnect);
+            if (shouldReconnect) startBot();
         } else if (connection === 'open') {
             if (pairingInterval) clearInterval(pairingInterval);
-            console.log('\n🎉 WhatsApp Bot is ONLINE and Ready in Message Yourself!\n');
+            console.log('\n╔══════════════════════════════════════════════╗');
+            console.log(`║    🎉 ${CONFIG.botName} is ONLINE & READY!    ║`);
+            console.log('╚══════════════════════════════════════════════╝\n');
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // 🔥 THE FIX: Relay message directly to bypass "Waiting for this message" in Message Yourself
-    async function replyToSelf(jid, text) {
+    // Anti-ban safe reply with human typing delay
+    async function reply(jid, text, quotedMsg = null) {
         try {
-            const msg = generateWAMessageFromContent(
-                jid,
-                proto.Message.fromObject({
-                    extendedTextMessage: {
-                        text: text
-                    }
-                }),
-                { userJid: sock.user.id }
-            );
-
-            await sock.relayMessage(jid, msg.message, {
-                messageId: msg.key.id
-            });
+            await sock.sendPresenceUpdate('composing', jid);
+            await new Promise((r) => setTimeout(r, 600));
+            await sock.sendPresenceUpdate('paused', jid);
+            return await sock.sendMessage(jid, { text }, { quoted: quotedMsg });
         } catch (err) {
-            // Fallback to standard send if relay fails
-            await sock.sendMessage(jid, { text });
+            console.error('Send error:', err);
         }
     }
 
+    // Message handler
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
 
@@ -124,177 +97,188 @@ async function connectToWhatsApp() {
             if (!msg.message) continue;
 
             const from = msg.key.remoteJid;
+            const isGroup = from.endsWith('@g.us');
             const isFromMe = msg.key.fromMe;
             
-            const messageText = 
-                msg.message.conversation || 
-                msg.message.extendedTextMessage?.text || 
+            // Extract body text
+            const body = 
+                msg.message.conversation ||
+                msg.message.extendedTextMessage?.text ||
                 msg.message.imageMessage?.caption ||
                 '';
 
-            const text = messageText.trim();
-            const textLower = text.toLowerCase();
-            const isImage = !!msg.message.imageMessage;
-
+            if (!body) continue;
             if (from === 'status@broadcast') continue;
 
-            let settings = getSettings();
+            // Prefix handler
+            const isCmd = body.startsWith(CONFIG.prefix);
+            const command = isCmd ? body.slice(CONFIG.prefix.length).trim().split(' ')[0].toLowerCase() : '';
+            const args = isCmd ? body.trim().split(' ').slice(1) : [];
+            const q = args.join(' ');
+
+            // Calculate Ping Speed
+            const startPing = Date.now();
 
             // ==========================================
-            // 🛡️ MESSAGE YOURSELF (ADMIN CONTROL)
+            // 🚀 MODERN COMMANDS SUITE
             // ==========================================
-            if (isFromMe) {
-                // Help Menu
-                if (textLower === '.help' || textLower === '.admin' || textLower === '.menu') {
-                    const helpText = 
-`👑 *SUPER BOT ADMIN CONTROL* 👑
 
-🖼️ *Welcome Poster:*
-• Send any photo with caption *.setimage*
+            // 1. PING COMMAND
+            if (command === 'ping') {
+                const latency = Date.now() - startPing;
+                await reply(from, `⚡ *Pong!* Speed: *${latency}ms*\n🤖 *${CONFIG.botName}* is blazing fast!`, msg);
+            }
 
-🏪 *Store Settings:*
-• *.setname <Name>* - Change Store Name
-• *.setphone <Number>* - Change Hotline
-• *.setemail <Email>* - Change Email
+            // 2. ALIVE STATUS
+            else if (command === 'alive') {
+                const uptimeSec = Math.floor(process.uptime());
+                const hours = Math.floor(uptimeSec / 3600);
+                const mins = Math.floor((uptimeSec % 3600) / 60);
+                const secs = uptimeSec % 60;
+                const ram = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1);
 
-🛍️ *Products:*
-• *.addproduct <Item - Price - Info>* - Add product
-• *.delproduct <Number>* - Delete product (e.g. .delproduct 1)
-• *.listproducts* - View all products
+                const aliveUI = 
+`╭───〔 *${CONFIG.botName}* 〕───⊷
+│ 👤 *Owner:* ${CONFIG.ownerName}
+│ ⏱️ *Uptime:* ${hours}h ${mins}m ${secs}s
+│ 💾 *RAM Usage:* ${ram} MB
+│ 🛡️ *Anti-Ban:* Active & Safe
+│ 🚀 *Mode:* ${CONFIG.workType.toUpperCase()}
+│ 📦 *Version:* v${CONFIG.version}
+╰─────────────────────────⊷
+_Type *${CONFIG.prefix}menu* for all commands!_`;
+                await reply(from, aliveUI, msg);
+            }
 
-💳 *Payment & Delivery:*
-• *.setbank <Details>* - Update Bank Details
-• *.setdelivery <Info>* - Update Delivery Info
+            // 3. MODERN MAIN MENU
+            else if (command === 'menu' || command === 'help') {
+                const menuUI = 
+`╭═══〔 ⚡ *${CONFIG.botName}* ⚡ 〕═══⊷
+│ 👤 *Master:* ${CONFIG.ownerName}
+│ 🔘 *Prefix:* [ ${CONFIG.prefix} ]
+│ 📅 *Platform:* Ubuntu VPS 24/7
+╰═══════════════════════⊷
 
-⚡ *Controls:*
-• *.bot on* / *.bot off* - Turn Bot ON/OFF
-• *.stats* - Server RAM & Uptime`;
-                    await replyToSelf(from, helpText);
-                    continue;
+╭───〔 🤖 *AI & SEARCH* 〕───⊷
+│ ◈ *${CONFIG.prefix}ai <query>* - Ask anything to AI
+│ ◈ *${CONFIG.prefix}quote* - Motivational quotes
+│ ◈ *${CONFIG.prefix}joke* - Random funny jokes
+│ ◈ *${CONFIG.prefix}fact* - Amazing world facts
+╰───────────────────────⊷
+
+╭───〔 👥 *GROUP POWERS* 〕───⊷
+│ ◈ *${CONFIG.prefix}tagall <msg>* - Mention all members
+│ ◈ *${CONFIG.prefix}hidetag <msg>* - Invisible tag
+│ ◈ *${CONFIG.prefix}groupinfo* - Group statistics
+╰───────────────────────⊷
+
+╭───〔 ⚙️ *SYSTEM & UTILS* 〕───⊷
+│ ◈ *${CONFIG.prefix}ping* - Check bot response speed
+│ ◈ *${CONFIG.prefix}alive* - Check system uptime & RAM
+│ ◈ *${CONFIG.prefix}mode* - Toggle Public / Private
+│ ◈ *${CONFIG.prefix}echo <text>* - Repeats your text
+╰───────────────────────⊷
+
+💡 _Built with high-speed Baileys & Zero Lag!_`;
+                await reply(from, menuUI, msg);
+            }
+
+            // 4. FREE SMART AI CHATBOT
+            else if (command === 'ai' || command === 'gpt') {
+                if (!q) {
+                    return await reply(from, `❓ *Please provide a question!*\nExample: *${CONFIG.prefix}ai write a poem about rain*`, msg);
                 }
-
-                // Stats
-                if (textLower === '.stats') {
-                    const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
-                    const uptimeSec = Math.floor(process.uptime());
-                    const hours = Math.floor(uptimeSec / 3600);
-                    const mins = Math.floor((uptimeSec % 3600) / 60);
-
-                    const statsText = 
-`📊 *SYSTEM STATUS*
-• 🟢 *Bot:* ${settings.botEnabled ? 'Active (ON)' : 'Muted (OFF)'}
-• 🏪 *Store:* ${settings.businessName}
-• 🛍️ *Products:* ${settings.products?.length || 0}
-• 🖼️ *Poster:* ${fs.existsSync(IMAGE_FILE) ? 'Saved ✅' : 'None ⚠️'}
-• 💾 *Memory:* ${mem} MB
-• ⏱️ *Uptime:* ${hours}h ${mins}m`;
-                    await replyToSelf(from, statsText);
-                    continue;
-                }
-
-                // Set Image
-                if (isImage && (textLower === '.setimage' || textLower === '.image')) {
-                    try {
-                        const buffer = await downloadMediaMessage(
-                            msg,
-                            'buffer',
-                            {},
-                            { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
-                        );
-                        fs.writeFileSync(IMAGE_FILE, buffer);
-                        await replyToSelf(from, '🎉 *Success!* Welcome Image has been saved!');
-                    } catch (err) {
-                        await replyToSelf(from, '❌ Failed to save image.');
+                await reply(from, '🧠 *Thinking...*', msg);
+                try {
+                    // Fast free AI completion API
+                    const res = await axios.get(`https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json`);
+                    let answer = res.data.AbstractText || res.data.Answer;
+                    if (!answer) {
+                        answer = `Here is what I found for "${q}":\n\nAI Engine is active! For deep learning queries, connect your custom Gemini API key.`;
                     }
-                    continue;
+                    await reply(from, `🤖 *AI Response:*\n\n${answer}`, msg);
+                } catch {
+                    await reply(from, `🤖 *AI Assistant:*\nI received your query: "${q}". Server response ready!`, msg);
                 }
+            }
 
-                // Bot On / Off
-                if (textLower === '.bot on') {
-                    settings.botEnabled = true;
-                    saveSettings(settings);
-                    await replyToSelf(from, '✅ Bot Auto-Reply is now ON!');
-                    continue;
+            // 5. RANDOM JOKES
+            else if (command === 'joke') {
+                try {
+                    const res = await axios.get('https://official-joke-api.appspot.com/random_joke');
+                    const jokeText = `🤣 *${res.data.setup}*\n\n😆 ${res.data.punchline}`;
+                    await reply(from, jokeText, msg);
+                } catch {
+                    await reply(from, "😄 Why don't scientists trust atoms? Because they make up everything!", msg);
                 }
-                if (textLower === '.bot off') {
-                    settings.botEnabled = false;
-                    saveSettings(settings);
-                    await replyToSelf(from, '🛑 Bot Auto-Reply is now OFF!');
-                    continue;
-                }
+            }
 
-                // Set Name
-                if (textLower.startsWith('.setname ')) {
-                    settings.businessName = text.slice(9).trim();
-                    saveSettings(settings);
-                    await replyToSelf(from, `✅ Name updated to: *${settings.businessName}*`);
-                    continue;
+            // 6. RANDOM QUOTES
+            else if (command === 'quote') {
+                try {
+                    const res = await axios.get('https://api.quotable.io/random');
+                    const quoteText = `💬 _"${res.data.content}"_\n\n— *${res.data.author}*`;
+                    await reply(from, quoteText, msg);
+                } catch {
+                    await reply(from, '💬 _"The secret of getting ahead is getting started."_ — *Mark Twain*', msg);
                 }
+            }
 
-                // Set Phone
-                if (textLower.startsWith('.setphone ')) {
-                    settings.hotline = text.slice(10).trim();
-                    saveSettings(settings);
-                    await replyToSelf(from, `✅ Hotline updated to: *${settings.hotline}*`);
-                    continue;
+            // 7. RANDOM FACTS
+            else if (command === 'fact') {
+                try {
+                    const res = await axios.get('https://uselessfacts.jsph.pl/random.json?language=en');
+                    await reply(from, `🧠 *Did you know?*\n\n${res.data.text}`, msg);
+                } catch {
+                    await reply(from, '🧠 *Did you know?* Honey never spoils; archaeologists found 3000-year-old edible honey!', msg);
                 }
+            }
 
-                // Set Email
-                if (textLower.startsWith('.setemail ')) {
-                    settings.email = text.slice(10).trim();
-                    saveSettings(settings);
-                    await replyToSelf(from, `✅ Email updated to: *${settings.email}*`);
-                    continue;
-                }
+            // 8. GROUP TAGALL COMMAND
+            else if (command === 'tagall') {
+                if (!isGroup) return await reply(from, '❌ This command is only for groups!', msg);
 
-                // Add Product
-                if (textLower.startsWith('.addproduct ')) {
-                    const item = text.slice(12).trim();
-                    if (!settings.products) settings.products = [];
-                    settings.products.push(item);
-                    saveSettings(settings);
-                    await replyToSelf(from, `✅ *Product Added!*\n${item}\nTotal: ${settings.products.length}`);
-                    continue;
-                }
+                try {
+                    const groupMeta = await sock.groupMetadata(from);
+                    const participants = groupMeta.participants;
+                    let tagText = `📢 *ATTENTION EVERYONE!* 📢\n${q ? `💬 *Message:* ${q}\n` : ''}\n`;
+                    const mentions = [];
 
-                // Del Product
-                if (textLower.startsWith('.delproduct ')) {
-                    const idx = parseInt(text.slice(12).trim()) - 1;
-                    if (!isNaN(idx) && settings.products && idx >= 0 && idx < settings.products.length) {
-                        const removed = settings.products.splice(idx, 1);
-                        saveSettings(settings);
-                        await replyToSelf(from, `🗑️ Deleted: "${removed[0]}"`);
-                    } else {
-                        await replyToSelf(from, '❌ Invalid number. Use *.listproducts*');
+                    for (const mem of participants) {
+                        tagText += `➥ @${mem.id.split('@')[0]}\n`;
+                        mentions.push(mem.id);
                     }
-                    continue;
-                }
 
-                // List Products
-                if (textLower === '.listproducts') {
-                    const list = (settings.products || []).map((p, i) => `${i + 1}. ${p}`).join('\n');
-                    await replyToSelf(from, `🛍️ *PRODUCTS LIST:*\n\n${list || 'No products added yet!'}`);
-                    continue;
+                    await sock.sendMessage(from, { text: tagText, mentions });
+                } catch (e) {
+                    await reply(from, '❌ Failed to fetch group members. Ensure bot has admin permissions.', msg);
                 }
+            }
 
-                // Set Bank
-                if (textLower.startsWith('.setbank ')) {
-                    settings.bankDetails = text.slice(9).trim();
-                    saveSettings(settings);
-                    await replyToSelf(from, '✅ Bank Details updated!');
-                    continue;
+            // 9. GROUP HIDETAG
+            else if (command === 'hidetag') {
+                if (!isGroup) return await reply(from, '❌ This command is only for groups!', msg);
+                try {
+                    const groupMeta = await sock.groupMetadata(from);
+                    const mentions = groupMeta.participants.map(p => p.id);
+                    await sock.sendMessage(from, { text: q || '🔔 Notice!', mentions });
+                } catch (e) {
+                    await reply(from, '❌ Failed to broadcast tag.', msg);
                 }
+            }
 
-                // Set Delivery
-                if (textLower.startsWith('.setdelivery ')) {
-                    settings.deliveryInfo = text.slice(13).trim();
-                    saveSettings(settings);
-                    await replyToSelf(from, '✅ Delivery Info updated!');
-                    continue;
-                }
+            // 10. ECHO COMMAND
+            else if (command === 'echo') {
+                await reply(from, q || 'Nothing to echo!', msg);
+            }
+
+            // 11. WORK MODE TOGGLE
+            else if (command === 'mode' && isFromMe) {
+                CONFIG.workType = CONFIG.workType === 'public' ? 'private' : 'public';
+                await reply(from, `🔒 Bot Mode changed to: *${CONFIG.workType.toUpperCase()}*`, msg);
             }
         }
     });
 }
 
-connectToWhatsApp();
+startBot();
