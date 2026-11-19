@@ -182,8 +182,8 @@ const LOCALES = {
 
 const defaultSettings = {
     botEnabled: true,
-    userLang: null,
-    awaitingLangChoice: true,
+    userLang: "si",
+    awaitingLangChoice: false,
     businessName: "Apex Store & Solutions",
     hotline: "+94 7X XXX XXXX",
     email: "support@apexstore.com",
@@ -231,7 +231,6 @@ async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_session');
     const { version } = await fetchLatestBaileysVersion();
 
-    // FIXED: Pure state.keys without cache wrapper to prevent Bad MAC error
     const sock = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
@@ -265,7 +264,7 @@ async function connectToWhatsApp() {
                 console.log('📌 Tap "Link with phone number instead" at the bottom');
                 console.log('📌 Enter the code above!\n');
             } catch (err) {
-                // Ignore transient errors
+                // ignore
             }
         };
 
@@ -286,24 +285,30 @@ async function connectToWhatsApp() {
             console.log('✅ WhatsApp Bot is Successfully Connected and Ready!');
             console.log('================================================\n');
 
-            // Send startup prompt to Message Yourself
-            setTimeout(async () => {
-                try {
-                    const normalizedJid = jidNormalizedUser(sock.user.id);
-                    const settings = getSettings();
-                    settings.awaitingLangChoice = true;
-                    saveSettings(settings);
-
-                    await sock.sendMessage(normalizedJid, { text: INITIAL_LANGUAGE_PROMPT });
-                    console.log('📬 Language Prompt delivered to Message Yourself!');
-                } catch (err) {
-                    console.error('Error sending startup prompt:', err);
-                }
-            }, 3000);
+            const settings = getSettings();
+            if (settings.awaitingLangChoice || !settings.userLang) {
+                setTimeout(async () => {
+                    try {
+                        const normalizedJid = jidNormalizedUser(sock.user.id);
+                        await sock.sendMessage(normalizedJid, { text: INITIAL_LANGUAGE_PROMPT });
+                        console.log('📬 Initial Language Prompt delivered!');
+                    } catch (err) {
+                        console.error('Error sending startup prompt:', err);
+                    }
+                }, 3000);
+            }
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    // Direct clean send helper for Self-Chat (prevents quote loop encryption freezes)
+    async function sendSelfMessage(jid, text) {
+        await sock.sendPresenceUpdate('composing', jid);
+        await sleep(500);
+        await sock.sendPresenceUpdate('paused', jid);
+        return await sock.sendMessage(jid, { text });
+    }
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
@@ -347,24 +352,24 @@ ${chosen.welcomeDesc}
 ${chosen.helpTitle}
 ${chosen.commands}`;
 
-                    await sock.sendMessage(from, { text: convertedMessage });
+                    await sendSelfMessage(from, convertedMessage);
                     continue;
                 }
 
                 if (textLower === '.lang' || textLower === '.language') {
                     settings.awaitingLangChoice = true;
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: INITIAL_LANGUAGE_PROMPT });
+                    await sendSelfMessage(from, INITIAL_LANGUAGE_PROMPT);
                     continue;
                 }
 
-                const currentLocale = LOCALES[settings.userLang] || LOCALES.en;
+                const currentLocale = LOCALES[settings.userLang] || LOCALES.si;
 
                 if (textLower === '.help' || textLower === '.menu') {
                     const helpMsg = 
 `${currentLocale.helpTitle}
 ${currentLocale.commands}`;
-                    await sock.sendMessage(from, { text: helpMsg });
+                    await sendSelfMessage(from, helpMsg);
                     continue;
                 }
 
@@ -377,9 +382,9 @@ ${currentLocale.commands}`;
                             { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
                         );
                         fs.writeFileSync(IMAGE_FILE, buffer);
-                        await sock.sendMessage(from, { text: '🎉 Welcome Image has been saved!' });
+                        await sendSelfMessage(from, '🎉 Welcome Image has been saved!');
                     } catch (err) {
-                        await sock.sendMessage(from, { text: '❌ Failed to save image.' });
+                        await sendSelfMessage(from, '❌ Failed to save image.');
                     }
                     continue;
                 }
@@ -387,20 +392,20 @@ ${currentLocale.commands}`;
                 if (textLower === '.bot on') {
                     settings.botEnabled = true;
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: '✅ Bot Auto-Reply is now ON!' });
+                    await sendSelfMessage(from, '✅ Bot Auto-Reply is now ON!');
                     continue;
                 }
                 if (textLower === '.bot off') {
                     settings.botEnabled = false;
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: '🛑 Bot Auto-Reply is now OFF!' });
+                    await sendSelfMessage(from, '🛑 Bot Auto-Reply is now OFF!');
                     continue;
                 }
 
                 if (textLower.startsWith('.setname ')) {
                     settings.businessName = text.slice(9).trim();
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: `✅ Name updated to: *${settings.businessName}*` });
+                    await sendSelfMessage(from, `✅ Name updated to: *${settings.businessName}*`);
                     continue;
                 }
 
@@ -409,19 +414,19 @@ ${currentLocale.commands}`;
                     if (!settings.products) settings.products = [];
                     settings.products.push(item);
                     saveSettings(settings);
-                    await sock.sendMessage(from, { text: `✅ Added: ${item}` });
+                    await sendSelfMessage(from, `✅ Added: ${item}`);
                     continue;
                 }
 
                 if (textLower === '.listproducts') {
                     const list = (settings.products || []).map((p, i) => `${i + 1}. ${p}`).join('\n');
-                    await sock.sendMessage(from, { text: `🛍️ *PRODUCTS:*\n\n${list}` });
+                    await sendSelfMessage(from, `🛍️ *PRODUCTS:*\n\n${list}`);
                     continue;
                 }
 
                 if (textLower === '.stats') {
                     const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
-                    await sock.sendMessage(from, { text: `📊 RAM: ${mem} MB | Lang: ${currentLocale.name}` });
+                    await sendSelfMessage(from, `📊 RAM: ${mem} MB | Lang: ${currentLocale.name}`);
                     continue;
                 }
             }
