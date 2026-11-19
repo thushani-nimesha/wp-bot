@@ -1,4 +1,4 @@
-import { default as makeWASocket, DisconnectReason, useMultiFileAuthState, downloadMediaMessage, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, jidNormalizedUser } from '@whiskeysockets/baileys';
+import { default as makeWASocket, DisconnectReason, useMultiFileAuthState, downloadMediaMessage, fetchLatestBaileysVersion, jidNormalizedUser } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
 import readline from 'readline';
@@ -231,20 +231,17 @@ async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_session');
     const { version } = await fetchLatestBaileysVersion();
 
+    // FIXED: Pure state.keys without cache wrapper to prevent Bad MAC error
     const sock = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
-        auth: {
-            creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
-        },
+        auth: state,
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
         syncFullHistory: false
     });
 
-    // Auto-refresh pairing code every 55 seconds until connected
     if (!sock.authState.creds.registered) {
         console.log('\n======================================================');
         console.log('📱 WhatsApp Pairing Code Setup');
@@ -272,10 +269,7 @@ async function connectToWhatsApp() {
             }
         };
 
-        // First attempt after 3s
         setTimeout(requestAndPrintCode, 3000);
-
-        // Auto regenerate every 55 seconds
         pairingInterval = setInterval(requestAndPrintCode, 55000);
     }
 
