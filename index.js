@@ -178,7 +178,7 @@ const LOCALES = {
 
 const defaultSettings = {
     botEnabled: true,
-    userLang: null, // null means not selected yet
+    userLang: null,
     awaitingLangChoice: true,
     businessName: "Apex Store & Solutions",
     hotline: "+94 7X XXX XXXX",
@@ -208,7 +208,6 @@ function saveSettings(settings) {
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
 }
 
-// The exact startup prompt requested by user
 const INITIAL_LANGUAGE_PROMPT = 
 `👋 *Hello User!*
 *Please select your language to continue:*
@@ -245,9 +244,9 @@ async function connectToWhatsApp() {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
-            console.log('\n👑 Super WhatsApp Bot is ONLINE 24/7 on VPS!\n');
+            console.log('\n👑 WhatsApp Bot is ONLINE! Triggering Language Prompt for current user...\n');
 
-            // Send startup prompt to Message Yourself
+            // Always send startup prompt to current logged-in user
             setTimeout(async () => {
                 try {
                     const normalizedJid = jidNormalizedUser(sock.user.id);
@@ -256,7 +255,7 @@ async function connectToWhatsApp() {
                     saveSettings(settings);
 
                     await sock.sendMessage(normalizedJid, { text: INITIAL_LANGUAGE_PROMPT });
-                    console.log('📬 Initial Language Prompt delivered to Message Yourself!');
+                    console.log('📬 Language Prompt successfully sent to Current User!');
                 } catch (err) {
                     console.error('Error sending startup prompt:', err);
                 }
@@ -295,7 +294,7 @@ async function connectToWhatsApp() {
             if (isFromMe) {
                 const langMap = { '1': 'si', '2': 'en', '3': 'ta', '4': 'ko', '5': 'es', '6': 'fr' };
 
-                // Handle Language Selection (Converts message yourself to chosen language)
+                // Handle Language Selection (Instant Conversion)
                 if (settings.awaitingLangChoice && langMap[textLower]) {
                     settings.userLang = langMap[textLower];
                     settings.awaitingLangChoice = false;
@@ -321,10 +320,8 @@ ${chosen.commands}`;
                     continue;
                 }
 
-                // Current chosen locale (default to English if not set yet)
                 const currentLocale = LOCALES[settings.userLang] || LOCALES.en;
 
-                // Help Dashboard in chosen language
                 if (textLower === '.help' || textLower === '.menu') {
                     const helpMsg = 
 `${currentLocale.helpTitle}
@@ -333,7 +330,6 @@ ${currentLocale.commands}`;
                     continue;
                 }
 
-                // Image upload
                 if (isImage && (textLower === '.setimage' || textLower === '.image')) {
                     try {
                         const buffer = await downloadMediaMessage(
@@ -350,7 +346,6 @@ ${currentLocale.commands}`;
                     continue;
                 }
 
-                // Other commands
                 if (textLower === '.bot on') {
                     settings.botEnabled = true;
                     saveSettings(settings);
