@@ -225,6 +225,8 @@ const INITIAL_LANGUAGE_PROMPT =
 
 👉 _Reply with the number (e.g. 1 or 2)_`;
 
+let pairingInterval = null;
+
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_session');
     const { version } = await fetchLatestBaileysVersion();
@@ -242,36 +244,50 @@ async function connectToWhatsApp() {
         syncFullHistory: false
     });
 
-    // If not registered yet, ask for phone number to get Pairing Code
+    // Auto-refresh pairing code every 55 seconds until connected
     if (!sock.authState.creds.registered) {
         console.log('\n======================================================');
-        console.log('📱 WhatsApp Pairing Code Method');
+        console.log('📱 WhatsApp Pairing Code Setup');
         console.log('======================================================\n');
         
         const phoneNumber = await question('👉 Enter your WhatsApp Number (with country code, e.g. 94771234567): ');
         const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
 
-        setTimeout(async () => {
+        const requestAndPrintCode = async () => {
+            if (sock.authState.creds.registered) {
+                if (pairingInterval) clearInterval(pairingInterval);
+                return;
+            }
             try {
                 const code = await sock.requestPairingCode(cleanNumber);
                 console.log('\n======================================================');
                 console.log(`🔥 YOUR PAIRING CODE IS:  ${code?.match(/.{1,4}/g)?.join('-') || code}`);
+                console.log('⏱️ (Valid for 60 seconds - will auto-refresh if expired)');
                 console.log('======================================================');
                 console.log('📌 WhatsApp -> Linked Devices -> Link a Device');
                 console.log('📌 Tap "Link with phone number instead" at the bottom');
                 console.log('📌 Enter the code above!\n');
             } catch (err) {
-                console.error('❌ Error requesting pairing code:', err);
+                // Ignore transient errors
             }
-        }, 3000);
+        };
+
+        // First attempt after 3s
+        setTimeout(requestAndPrintCode, 3000);
+
+        // Auto regenerate every 55 seconds
+        pairingInterval = setInterval(requestAndPrintCode, 55000);
     }
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
+
         if (connection === 'close') {
+            if (pairingInterval) clearInterval(pairingInterval);
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
+            if (pairingInterval) clearInterval(pairingInterval);
             console.log('\n🎉 ================================================');
             console.log('✅ WhatsApp Bot is Successfully Connected and Ready!');
             console.log('================================================\n');
@@ -324,7 +340,6 @@ async function connectToWhatsApp() {
             if (isFromMe) {
                 const langMap = { '1': 'si', '2': 'en', '3': 'ta', '4': 'ko', '5': 'es', '6': 'fr' };
 
-                // Handle Language Selection (Instant Conversion)
                 if (settings.awaitingLangChoice && langMap[textLower]) {
                     settings.userLang = langMap[textLower];
                     settings.awaitingLangChoice = false;
