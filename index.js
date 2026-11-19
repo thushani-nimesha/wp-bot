@@ -1,10 +1,14 @@
 import { default as makeWASocket, DisconnectReason, useMultiFileAuthState, downloadMediaMessage, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, jidNormalizedUser } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
+import readline from 'readline';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const SETTINGS_FILE = 'settings.json';
 const IMAGE_FILE = 'welcome.jpg';
+
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
 // Localization for all 6 languages
 const LOCALES = {
@@ -238,15 +242,41 @@ async function connectToWhatsApp() {
         syncFullHistory: false
     });
 
+    // If not registered yet, ask for phone number to get Pairing Code
+    if (!sock.authState.creds.registered) {
+        console.log('\n======================================================');
+        console.log('📱 WhatsApp Pairing Code Method');
+        console.log('======================================================\n');
+        
+        const phoneNumber = await question('👉 Enter your WhatsApp Number (with country code, e.g. 94771234567): ');
+        const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
+
+        setTimeout(async () => {
+            try {
+                const code = await sock.requestPairingCode(cleanNumber);
+                console.log('\n======================================================');
+                console.log(`🔥 YOUR PAIRING CODE IS:  ${code?.match(/.{1,4}/g)?.join('-') || code}`);
+                console.log('======================================================');
+                console.log('📌 WhatsApp -> Linked Devices -> Link a Device');
+                console.log('📌 Tap "Link with phone number instead" at the bottom');
+                console.log('📌 Enter the code above!\n');
+            } catch (err) {
+                console.error('❌ Error requesting pairing code:', err);
+            }
+        }, 3000);
+    }
+
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
-            console.log('\n👑 WhatsApp Bot is ONLINE! Triggering Language Prompt for current user...\n');
+            console.log('\n🎉 ================================================');
+            console.log('✅ WhatsApp Bot is Successfully Connected and Ready!');
+            console.log('================================================\n');
 
-            // Always send startup prompt to current logged-in user
+            // Send startup prompt to Message Yourself
             setTimeout(async () => {
                 try {
                     const normalizedJid = jidNormalizedUser(sock.user.id);
@@ -255,7 +285,7 @@ async function connectToWhatsApp() {
                     saveSettings(settings);
 
                     await sock.sendMessage(normalizedJid, { text: INITIAL_LANGUAGE_PROMPT });
-                    console.log('📬 Language Prompt successfully sent to Current User!');
+                    console.log('📬 Language Prompt delivered to Message Yourself!');
                 } catch (err) {
                     console.error('Error sending startup prompt:', err);
                 }
@@ -312,7 +342,6 @@ ${chosen.commands}`;
                     continue;
                 }
 
-                // If user types .lang anytime to switch language
                 if (textLower === '.lang' || textLower === '.language') {
                     settings.awaitingLangChoice = true;
                     saveSettings(settings);
